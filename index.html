@@ -191,7 +191,7 @@
     <div class="bd-listbar">
       <div>
         <h2>Consumer List</h2>
-        <p class="sub">First 200 matching consumers from the uploaded file are shown here. Export gives the full matching list.</p>
+        <p class="sub">First 100 matching consumers from the uploaded file are shown here. Export gives the full matching list.</p>
       </div>
       <div class="bd-actions" id="export">
         <button type="button" id="ex-xlsx" class="bd-btn">Export Excel</button>
@@ -317,7 +317,7 @@
       for (const d of u.rows) {
         if (!ok(d)) continue;
         n++; tl += +d.theft_litigation_arrears || 0;
-        if (list.length < 200) list.push(Object.assign({ sr: list.length + 1 }, d));
+        if (list.length < 100) list.push(Object.assign({ sr: list.length + 1 }, d));
       }
       val = { total: u.rows.length, consumers: n, theft_lit_lakh: Math.round(tl / 1e3) / 100, list };
     }
