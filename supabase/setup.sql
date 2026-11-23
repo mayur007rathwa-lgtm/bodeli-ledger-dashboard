@@ -1,5 +1,5 @@
 -- Bodeli dashboard - corrected storage rules.
--- Replace your-admin@email.com (one place, line 6) with the admin email, then Run all.
+-- Replace your-admin@email.com (one place, line 7) with the admin email, then Run all.
 -- Anyone with the website link can read the master file (open for all); only the admin can upload.
 
 create or replace function public.bd_is_admin() returns boolean
