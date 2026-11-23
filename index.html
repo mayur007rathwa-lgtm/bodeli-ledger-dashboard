@@ -28,7 +28,7 @@
   // Division master store (Supabase). Paste the Project URL and the anon / publishable key from Supabase > Project Settings > API.
   // Leave both empty to use the dashboard with file upload only.
   window.BD_SUPABASE_URL = 'https://ffqftuvfrbmwkevdzzgn.supabase.co';
-  window.BD_SUPABASE_KEY = '';
+  window.BD_SUPABASE_KEY = 'sb_publishable_Mv1u1109JQAmSRDZKhsdJA_Y-jZt35n';
 </script>
 <script>
   // Small stand-in for the dashboard runtime so the page works as a plain website.
@@ -598,7 +598,8 @@
     }
     return sbSession.access_token;
   }
-  const sbHeaders = async (extra) => Object.assign({ apikey: SB.key, Authorization: 'Bearer ' + await sbToken() }, extra || {});
+  // A publishable key (sb_publishable_…) is not a JWT, so it goes only in apikey; Authorization carries a signed-in user's token.
+  const sbHeaders = async (extra) => { const t = await sbToken(); const h = { apikey: SB.key }; if (t && t !== SB.key) h.Authorization = 'Bearer ' + t; return Object.assign(h, extra || {}); };
   const sbObj = (path) => SB.url + '/storage/v1/object/' + SB.bucket + '/' + path.split('/').map(encodeURIComponent).join('/');
   async function sbGet(path) { return fetch(SB.url + '/storage/v1/object/authenticated/' + SB.bucket + '/' + path.split('/').map(encodeURIComponent).join('/'), { headers: await sbHeaders(), cache: 'no-store' }); }
   async function sbPut(path, blob, type) {
