@@ -735,7 +735,11 @@
     const f = bdFlt().tariff;
     const picked = new Set(f && f.v ? f.v : []);
     const active = !!(f && (f.v || f.t));
-    [...cnt.entries()].sort((a, b) => b[1] - a[1]).forEach(([t, n]) => {
+    // Tariff card order fixed by the Division (LTMD = LTM D, SL.AP = SLAP, TMP = TEMP); others follow, BLANK last.
+    const ORDER = ['RGPR', 'RGPU', 'NRGP', 'LTMD', 'GLP', 'GLPSL', 'GLPSP', 'WWGP', 'WWPR', 'WWNP', 'A1', 'A2', 'A3', 'A4', 'A5', 'SLAP', 'TMP'];
+    const ALIAS = { LTM: 'LTMD', TEMP: 'TMP' };
+    const rank = (t) => { if (t === 'BLANK') return ORDER.length + 1; const k = String(t).toUpperCase().replace(/[^A-Z0-9]/g, ''); const i = ORDER.indexOf(ALIAS[k] || k); return i < 0 ? ORDER.length : i; };
+    [...cnt.entries()].sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1]).forEach(([t, n]) => {
       const b = document.createElement('button');
       b.type = 'button';
       const on = picked.has(t);
