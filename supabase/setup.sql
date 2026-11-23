@@ -1,5 +1,6 @@
 -- Bodeli dashboard - corrected storage rules.
 -- Replace your-admin@email.com (one place, line 6) with the admin email, then Run all.
+-- Anyone with the website link can read the master file (open for all); only the admin can upload.
 
 create or replace function public.bd_is_admin() returns boolean
 language sql stable as $$
@@ -15,7 +16,7 @@ drop policy if exists "ledger_admin_update" on storage.objects;
 drop policy if exists "ledger_admin_delete" on storage.objects;
 
 create policy "ledger_read_signed_in" on storage.objects
-  for select to authenticated using (bucket_id = 'ledger');
+  for select to anon, authenticated using (bucket_id = 'ledger');
 create policy "ledger_admin_insert" on storage.objects
   for insert to authenticated with check (bucket_id = 'ledger' and public.bd_is_admin());
 create policy "ledger_admin_update" on storage.objects

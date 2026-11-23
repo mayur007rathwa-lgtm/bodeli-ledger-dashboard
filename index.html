@@ -163,6 +163,7 @@
     <span class="src" data-draw="srcinfo">—</span>
     <span class="bd-status" id="sb-who" hidden></span>
     <button type="button" id="sb-out" class="bd-btn" hidden>Sign out</button>
+    <button type="button" id="sb-adm" class="bd-btn" hidden>Admin sign in</button>
     <span class="bd-status" id="dr-busy" hidden>Loading the master file…</span>
     <span class="bd-status bad" id="dr-fail" hidden>The master file could not be loaded. Check the internet connection and reload.</span>
     <form class="bd-login" id="sb-login" hidden>
@@ -550,7 +551,7 @@
       return;
     }
     const st = window.bdDriveState;
-    el.textContent = window.BD_SUPABASE_URL ? (st === 'loading' ? 'Loading the master file…' : st === 'login' ? 'Sign in to see the Division master file.' : st === 'none' ? 'The Division admin has not published a master file yet.' : st === 'fail' ? 'The master file could not be loaded.' : 'Loading the master file…')
+    el.textContent = window.BD_SUPABASE_URL ? (st === 'loading' ? 'Loading the master file…' : st === 'login' ? 'No master file to show yet. The Division admin can sign in below to upload it.' : st === 'none' ? 'The Division admin has not published a master file yet.' : st === 'fail' ? 'The master file could not be loaded.' : 'Loading the master file…')
       : 'No data loaded yet. Upload one or more LDG text files (for example 034LDG102026.txt) to start.';
   });
   const showUp = (id) => ['up-busy', 'up-fail'].forEach((s) => document.querySelectorAll('#' + s).forEach((e) => { e.hidden = s !== id; }));
@@ -629,7 +630,9 @@
   }
   function sbShowAccount() {
     const on = !!sbSession;
-    qs('sb-login').forEach((e) => { e.hidden = on || window.bdDriveState !== 'login'; });
+    const wantForm = window.bdDriveState === 'login' || window.bdShowLogin;
+    qs('sb-login').forEach((e) => { e.hidden = on || !wantForm; });
+    qs('sb-adm').forEach((e) => { e.hidden = on || wantForm || !SB.url || window.bdDriveState === 'loading'; });
     qs('sb-who').forEach((e) => { e.hidden = !on; e.textContent = on ? 'Signed in as ' + sbSession.email : ''; });
     qs('sb-out').forEach((e) => { e.hidden = !on; });
     qs('sb-admin').forEach((e) => { e.hidden = !on; });
@@ -676,7 +679,9 @@
     try { await sbAuth({ email: email.trim(), password }, 'password'); qs('sb-pass').forEach((e) => { e.value = ''; }); await loadDrive(); }
     catch (e) { qs('sb-bad').forEach((x) => { x.hidden = false; }); }
   }));
+  qs('sb-adm').forEach((b) => b.addEventListener('click', () => { window.bdShowLogin = true; sbShowAccount(); qs('sb-email').forEach((e) => e.focus()); }));
   qs('sb-out').forEach((b) => b.addEventListener('click', async () => {
+    window.bdShowLogin = false;
     try { await fetch(SB.url + '/auth/v1/logout', { method: 'POST', headers: await sbHeaders() }); } catch (e) { /* signed out locally anyway */ }
     sbSession = null; sbStore.set(null);
     if (window.bdUpload && window.bdUpload.drive) window.bdUpload = null;
