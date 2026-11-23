@@ -175,6 +175,7 @@
       <span class="bd-status" id="adm-busy" hidden>Reading and uploading…</span>
       <span class="bd-status" id="adm-done" hidden>Published. Everyone now sees this master file.</span>
       <span class="bd-status bad" id="adm-fail" hidden>Upload failed. Only the Division admin account can upload, and the file must be the LDG text export with its header row.</span>
+      <span class="bd-status bad" id="adm-err" hidden></span>
     </div>
     <label class="bd-upl" for="up-file" id="up-local"><span>Upload an LDG text file (this browser only)</span>
       <input type="file" id="up-file" class="bd-fileinput" multiple>
@@ -604,7 +605,7 @@
   async function sbGet(path) { return fetch(SB.url + '/storage/v1/object/authenticated/' + SB.bucket + '/' + path.split('/').map(encodeURIComponent).join('/'), { headers: await sbHeaders(), cache: 'no-store' }); }
   async function sbPut(path, blob, type) {
     const r = await fetch(sbObj(path), { method: 'POST', headers: await sbHeaders({ 'Content-Type': type, 'x-upsert': 'true', 'Cache-Control': 'no-cache' }), body: blob });
-    if (!r.ok) throw new Error('upload ' + r.status);
+    if (!r.ok) { let t = ''; try { t = await r.text(); } catch (e) { t = ''; } throw new Error('Supabase upload ' + r.status + ': ' + t.slice(0, 300)); }
   }
   async function sbDel(paths) {
     if (!paths.length) return;
@@ -682,6 +683,7 @@
     const files = [...(inp.files || [])];
     if (!files.length) return;
     showOnly(ADM, 'adm-busy');
+    qs('adm-err').forEach((e) => { e.hidden = true; e.textContent = ''; });
     try {
       let old = null;
       try { const r0 = await sbGet('master/index.json'); if (r0.ok) old = await r0.json(); } catch (e) { old = null; }
@@ -704,6 +706,8 @@
       await loadDrive();
     } catch (e) {
       showOnly(ADM, 'adm-fail');
+      const msg = e && e.message === 'empty' ? 'Detail: the file is empty.' : e && e.message === 'header' ? 'Detail: the file has no CONSUMER_NO / SUBDIV_NAME header row.' : e && e.message === 'norows' ? 'Detail: the file has no consumer rows.' : 'Detail: ' + String((e && e.message) || e);
+      qs('adm-err').forEach((x) => { x.textContent = msg; x.hidden = false; });
     } finally { inp.value = ''; }
   }));
   setTimeout(loadDrive, 0);
