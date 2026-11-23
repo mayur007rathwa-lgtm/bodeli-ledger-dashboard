@@ -114,6 +114,9 @@
   .bd-table td.num, .bd-table th.num { text-align: right; }
   .bd-table tbody tr:last-child td { border-bottom: 0; }
   .bd-table tbody tr:hover td { background: var(--color-panel); }
+  .bd-head { position: relative; }
+  .bd-prep { margin: 0 0 var(--cds-gap-xs); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); text-align: right; line-height: 1.4; }
+  @media (min-width: 720px) { .bd-prep { position: absolute; top: 0; right: 0; margin: 0; } .bd-head > h1, .bd-head > .bd-eyebrow { padding-right: 230px; } }
   .bd-upload { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm) var(--cds-gap-md); align-items: center; padding: var(--cds-pad-md) var(--cds-pad-lg); border: 1px dashed var(--color-border-line); border-radius: var(--cds-radius); background: var(--color-panel); }
   .bd-upload .t { font-weight: var(--cds-font-weight-medium); }
   .bd-upload .src { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
@@ -149,6 +152,7 @@
 
 <div class="bd" lang="en">
   <header class="bd-head" id="top">
+    <p class="bd-prep" id="prepared-by">Prepared by - Mayur Rathava (JE Tech 2)<br>Bodeli Division</p>
     <p class="bd-eyebrow">MGVCL · Baroda O&amp;M Circle · Bodeli O&amp;M Division · Consumer Ledger</p>
     <h1>Bodeli Division Ledger Dashboard</h1>
     <p class="bd-take" data-read lang="en"><b data-draw="kpi" data-k="consumers">—</b> of <b data-draw="kpi" data-k="total">—</b> ledger consumers match the current search and filters.</p>
