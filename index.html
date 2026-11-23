@@ -25,6 +25,10 @@
   [hidden] { display: none !important; }
 </style>
 <script>
+  // Division master file link (Google Apps Script web app that reads the Drive folder). Leave empty for upload only.
+  window.BD_MASTER_URL = '';
+</script>
+<script>
   // Small stand-in for the dashboard runtime so the page works as a plain website.
   (function () {
     const P = { q: '', mq: '', flt: '', src: '' };
@@ -148,7 +152,9 @@
   <section class="bd-upload" id="upload" aria-label="Load ledger text file">
     <span class="t">Ledger data</span>
     <span class="src" data-draw="srcinfo">—</span>
-    <label class="bd-upl" for="up-file"><span>Upload LDG text file</span>
+    <span class="bd-status" id="dr-busy" hidden>Loading the master file from Google Drive…</span>
+    <span class="bd-status bad" id="dr-fail" hidden>The master file could not be loaded from Google Drive. Check the internet connection and reload, or upload the LDG file below.</span>
+    <label class="bd-upl" for="up-file"><span>Or upload an LDG text file (this browser only)</span>
       <input type="file" id="up-file" class="bd-fileinput" multiple>
     </label>
     <span class="bd-drop">or drag and drop the file here</span>
@@ -513,11 +519,12 @@
     const u = window.bdUpload;
     if (u) {
       const m = MONTHS[(parseInt(u.month, 10) || 0) - 1];
-      el.textContent = 'Showing uploaded file' + (u.files.length > 1 ? 's' : '') + ': ' + u.files.map((f) => f.name + ' (' + bdFmt.int(f.count) + ' consumers)').join(', ')
-        + (m ? ' · Month ' + m + '-' + u.year : '') + ' · Only in this browser, not saved.';
+      el.textContent = (u.drive ? 'Master file' : 'Showing uploaded file') + (u.files.length > 1 ? 's' : '') + ': ' + u.files.map((f) => f.name + ' (' + bdFmt.int(f.count) + ' consumers)').join(', ')
+        + (m ? ' · Month ' + m + '-' + u.year : '') + (u.drive ? ' · From the Division Google Drive folder' + (u.updated ? ', updated ' + u.updated : '') : ' · Only in this browser, not saved.');
       return;
     }
-    el.textContent = 'No data loaded yet. Upload one or more LDG text files (for example 034LDG102026.txt) to start.';
+    el.textContent = window.BD_MASTER_URL ? (window.bdDriveState === 'loading' ? 'Loading the master file from Google Drive…' : 'No master file found in the Division Google Drive folder. Upload an LDG text file to see data in this browser.')
+      : 'No data loaded yet. Upload one or more LDG text files (for example 034LDG102026.txt) to start.';
   });
   const showUp = (id) => ['up-busy', 'up-fail'].forEach((s) => document.querySelectorAll('#' + s).forEach((e) => { e.hidden = s !== id; }));
   const setUploaded = (on) => document.querySelectorAll('#up-reset').forEach((b) => { b.hidden = !on; });
@@ -545,6 +552,44 @@
       showUp('up-fail');
     } finally { if (inp) inp.value = ''; }
   }
+  // Division master file: the LDG files the admin keeps in the Google Drive folder, read through the Division's Apps Script link.
+  async function loadDrive() {
+    const url = window.BD_MASTER_URL;
+    if (!url) return;
+    window.bdDriveState = 'loading';
+    ['dr-busy', 'dr-fail'].forEach((s) => document.querySelectorAll('#' + s).forEach((e) => { e.hidden = s !== 'dr-busy'; }));
+    dash.draw('srcinfo');
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error('http ' + res.status);
+      const j = await res.json();
+      if (j.error) throw new Error(j.error);
+      const rows = [], info = [];
+      let month = '', year = '', updated = '';
+      for (const f of j.files || []) {
+        const parsed = bdParseLedger(f.text || '');
+        for (const r of parsed.rows) rows.push(r);
+        info.push({ name: f.name, count: parsed.rows.length });
+        if (!month) { month = parsed.month; year = parsed.year; }
+        const d = f.updated ? new Date(f.updated) : null;
+        if (d && !isNaN(d)) { const t = d.toLocaleDateString('en-GB').replace(/\//g, '-'); if (!updated || t > updated) updated = t; }
+      }
+      window.bdDriveState = rows.length ? 'ok' : 'none';
+      ['dr-busy', 'dr-fail'].forEach((s) => document.querySelectorAll('#' + s).forEach((e) => { e.hidden = true; }));
+      if (window.bdUpload && !window.bdUpload.drive) return; // the viewer already uploaded a file of their own
+      if (rows.length) {
+        window.bdUpload = { id: 'drive-' + Date.now(), rows, files: info, month, year, drive: true, updated };
+        window.bdPop = null;
+        dash.setParams({ src: 'drive-' + Date.now(), flt: '' });
+      }
+      dash.draw('srcinfo'); dash.draw('fbtn'); dash.draw('pop'); dash.draw('tcards'); dash.draw('kpi'); dash.draw('resmsg'); dash.draw('restable');
+    } catch (e) {
+      window.bdDriveState = 'fail';
+      ['dr-busy', 'dr-fail'].forEach((s) => document.querySelectorAll('#' + s).forEach((e) => { e.hidden = s !== 'dr-fail'; }));
+      dash.draw('srcinfo');
+    }
+  }
+  setTimeout(loadDrive, 0);
   document.querySelectorAll('#up-file').forEach((inp) => inp.addEventListener('change', () => loadFiles([...(inp.files || [])], inp)));
   document.querySelectorAll('#upload').forEach((zone) => {
     zone.addEventListener('dragover', (ev) => { ev.preventDefault(); zone.classList.add('drag'); });

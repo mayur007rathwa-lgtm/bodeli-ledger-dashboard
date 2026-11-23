@@ -22,3 +22,16 @@ and is never sent to any server or saved anywhere.
 ## Offline use
 
 Download `index.html` from the latest release and open it in Chrome or Edge.
+
+## Division master file from Google Drive
+
+The Division admin keeps the latest LDG text files in one Google Drive folder. The
+website reads them automatically on opening, so viewers do not need to upload.
+
+1. Create a Drive folder and upload the latest LDG `.txt` files into it.
+2. At script.google.com, create a project, paste `drive/Code.gs`, and set `FOLDER_ID`.
+3. Deploy > New deployment > Web app (Execute as: Me, Who has access: Anyone).
+4. Put the Web app URL in `window.BD_MASTER_URL` near the top of `index.html`.
+
+Each month, replace the files in the Drive folder; the website picks them up on the next
+opening. Note: anyone who has the website link can see the data it loads.
