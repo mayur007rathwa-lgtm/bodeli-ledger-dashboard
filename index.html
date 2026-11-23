@@ -25,8 +25,10 @@
   [hidden] { display: none !important; }
 </style>
 <script>
-  // Division master file link (Google Apps Script web app that reads the Drive folder). Leave empty for upload only.
-  window.BD_MASTER_URL = 'https://script.google.com/macros/s/AKfycbw4zsMx51zBkTRSInWxknzS64zXvk7mSN9XqDKaVRmWxbKExjmSAoqx1LluKKUfKc7iIQ/exec';
+  // Division master store (Supabase). Paste the Project URL and the anon / publishable key from Supabase > Project Settings > API.
+  // Leave both empty to use the dashboard with file upload only.
+  window.BD_SUPABASE_URL = '';
+  window.BD_SUPABASE_KEY = '';
 </script>
 <script>
   // Small stand-in for the dashboard runtime so the page works as a plain website.
@@ -67,6 +69,9 @@
   .bd-take b { color: var(--color-fg); font-weight: var(--cds-font-weight-medium); font-variant-numeric: tabular-nums; }
   .bd-searches { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: var(--cds-gap-md); }
   .bd-search { display: flex; flex-direction: column; gap: var(--cds-gap-xs); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); min-width: 0; }
+  .bd-login { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); align-items: flex-end; width: 100%; }
+  .bd-login input { font: inherit; font-size: 16px; color: var(--color-fg); background-color: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: 7px 10px; min-width: 0; flex: 1 1 180px; box-sizing: border-box; }
+  .bd-admin { width: 100%; display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm) var(--cds-gap-md); align-items: center; padding-top: var(--cds-gap-sm); border-top: 1px solid var(--color-border-line); }
   .bd-search input { font: inherit; font-size: 16px; color: var(--color-fg); background-color: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: 10px 12px; width: 100%; box-sizing: border-box; }
   .bd-search input:focus-visible, .bd-hf:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 1px; }
   .bd-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--cds-gap-md); align-items: end; }
@@ -149,15 +154,31 @@
     <p class="bd-take" data-read lang="en"><b data-draw="kpi" data-k="consumers">—</b> of <b data-draw="kpi" data-k="total">—</b> ledger consumers match the current search and filters.</p>
   </header>
 
-  <section class="bd-upload" id="upload" aria-label="Load ledger text file">
+  <section class="bd-upload" id="upload" aria-label="Ledger data">
     <span class="t">Ledger data</span>
     <span class="src" data-draw="srcinfo">—</span>
-    <span class="bd-status" id="dr-busy" hidden>Loading the master file from Google Drive…</span>
-    <span class="bd-status bad" id="dr-fail" hidden>The master file could not be loaded from Google Drive. Check the internet connection and reload, or upload the LDG file below.</span>
-    <label class="bd-upl" for="up-file"><span>Or upload an LDG text file (this browser only)</span>
+    <span class="bd-status" id="sb-who" hidden></span>
+    <button type="button" id="sb-out" class="bd-btn" hidden>Sign out</button>
+    <span class="bd-status" id="dr-busy" hidden>Loading the master file…</span>
+    <span class="bd-status bad" id="dr-fail" hidden>The master file could not be loaded. Check the internet connection and reload.</span>
+    <form class="bd-login" id="sb-login" hidden>
+      <label class="bd-search" for="sb-email">Email<input type="email" id="sb-email" autocomplete="username" required></label>
+      <label class="bd-search" for="sb-pass">Password<input type="password" id="sb-pass" autocomplete="current-password" required></label>
+      <button type="submit" class="bd-btn">Sign in</button>
+      <span class="bd-status bad" id="sb-bad" hidden>Sign in failed. Check the email and password.</span>
+    </form>
+    <div class="bd-admin" id="sb-admin" hidden>
+      <span class="t">Division admin</span>
+      <label class="bd-upl" for="adm-file"><span>Upload latest master file(s) for everyone</span>
+        <input type="file" id="adm-file" class="bd-fileinput" multiple>
+      </label>
+      <span class="bd-status" id="adm-busy" hidden>Reading and uploading…</span>
+      <span class="bd-status" id="adm-done" hidden>Published. Everyone now sees this master file.</span>
+      <span class="bd-status bad" id="adm-fail" hidden>Upload failed. Only the Division admin account can upload, and the file must be the LDG text export with its header row.</span>
+    </div>
+    <label class="bd-upl" for="up-file" id="up-local"><span>Upload an LDG text file (this browser only)</span>
       <input type="file" id="up-file" class="bd-fileinput" multiple>
     </label>
-    <span class="bd-drop">or drag and drop the file here</span>
     <button type="button" id="up-reset" class="bd-btn" hidden>Clear uploaded data</button>
     <span class="bd-status" id="up-busy" hidden>Reading file…</span>
     <span class="bd-status bad" id="up-fail" hidden>This file could not be read. Upload the LDG text export with the header row (MONTH|YEAR|…|CONSUMER_NO|…).</span>
@@ -520,10 +541,11 @@
     if (u) {
       const m = MONTHS[(parseInt(u.month, 10) || 0) - 1];
       el.textContent = (u.drive ? 'Master file' : 'Showing uploaded file') + (u.files.length > 1 ? 's' : '') + ': ' + u.files.map((f) => f.name + ' (' + bdFmt.int(f.count) + ' consumers)').join(', ')
-        + (m ? ' · Month ' + m + '-' + u.year : '') + (u.drive ? ' · From the Division Google Drive folder' + (u.updated ? ', updated ' + u.updated : '') : ' · Only in this browser, not saved.');
+        + (m ? ' · Month ' + m + '-' + u.year : '') + (u.drive ? ' · Division master file' + (u.updated ? ', published ' + u.updated : '') : ' · Only in this browser, not saved.');
       return;
     }
-    el.textContent = window.BD_MASTER_URL ? (window.bdDriveState === 'loading' ? 'Loading the master file from Google Drive…' : 'No master file found in the Division Google Drive folder. Upload an LDG text file to see data in this browser.')
+    const st = window.bdDriveState;
+    el.textContent = window.BD_SUPABASE_URL ? (st === 'loading' ? 'Loading the master file…' : st === 'login' ? 'Sign in to see the Division master file.' : st === 'none' ? 'The Division admin has not published a master file yet.' : st === 'fail' ? 'The master file could not be loaded.' : 'Loading the master file…')
       : 'No data loaded yet. Upload one or more LDG text files (for example 034LDG102026.txt) to start.';
   });
   const showUp = (id) => ['up-busy', 'up-fail'].forEach((s) => document.querySelectorAll('#' + s).forEach((e) => { e.hidden = s !== id; }));
@@ -552,43 +574,137 @@
       showUp('up-fail');
     } finally { if (inp) inp.value = ''; }
   }
-  // Division master file: the LDG files the admin keeps in the Google Drive folder, read through the Division's Apps Script link.
+  // Division master store (Supabase Storage, bucket "ledger"): master/index.json lists gzip parts of the used columns.
+  const SB = { url: String(window.BD_SUPABASE_URL || '').replace(/\/+$/, ''), key: window.BD_SUPABASE_KEY || '', bucket: 'ledger' };
+  const SB_KEEP = ['MONTH', 'YEAR', 'CONSUMER_NO', 'CONSUMER_NAME', 'SUBDIV_NAME', 'VILLAGE_NAME', 'TARRIF_SHORT', 'TARRIF', 'FEEDER_NAME', 'FEEDER_NO', 'METER_STATUS', 'SOLAR_CONSUMER',
+    'CONTRACT_LOAD', 'CONSUMPTION_UNIT', 'THEFT_ARREARS', 'LITIGATION_ARREARS', 'METER_NO', 'ADDRESS1', 'ADDRESS2', 'CENCUS_CODE', 'CENSUS_CODE', 'TRANS_LOCATION', 'CONNECTION_DATE', 'PDC_DATE'];
+  const qs = (id) => [...document.querySelectorAll('#' + id)];
+  const showOnly = (ids, on) => ids.forEach((s) => qs(s).forEach((e) => { e.hidden = s !== on; }));
+  const sbStore = {
+    get() { try { return JSON.parse(localStorage.getItem('bd-sb-session') || 'null'); } catch (e) { return null; } },
+    set(v) { try { if (v) localStorage.setItem('bd-sb-session', JSON.stringify(v)); else localStorage.removeItem('bd-sb-session'); } catch (e) { /* private window */ } }
+  };
+  let sbSession = sbStore.get();
+  const sbSave = (j) => { sbSession = { access_token: j.access_token, refresh_token: j.refresh_token, expires_at: Date.now() + (j.expires_in || 3600) * 1000, email: (j.user && j.user.email) || (sbSession && sbSession.email) || '' }; sbStore.set(sbSession); };
+  async function sbAuth(body, grant) {
+    const r = await fetch(SB.url + '/auth/v1/token?grant_type=' + grant, { method: 'POST', headers: { apikey: SB.key, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error('auth ' + r.status);
+    sbSave(await r.json());
+  }
+  async function sbToken() {
+    if (!sbSession) return SB.key;
+    if (Date.now() > sbSession.expires_at - 60000) {
+      try { await sbAuth({ refresh_token: sbSession.refresh_token }, 'refresh_token'); } catch (e) { sbSession = null; sbStore.set(null); return SB.key; }
+    }
+    return sbSession.access_token;
+  }
+  const sbHeaders = async (extra) => Object.assign({ apikey: SB.key, Authorization: 'Bearer ' + await sbToken() }, extra || {});
+  const sbObj = (path) => SB.url + '/storage/v1/object/' + SB.bucket + '/' + path.split('/').map(encodeURIComponent).join('/');
+  async function sbGet(path) { return fetch(SB.url + '/storage/v1/object/authenticated/' + SB.bucket + '/' + path.split('/').map(encodeURIComponent).join('/'), { headers: await sbHeaders(), cache: 'no-store' }); }
+  async function sbPut(path, blob, type) {
+    const r = await fetch(sbObj(path), { method: 'POST', headers: await sbHeaders({ 'Content-Type': type, 'x-upsert': 'true', 'Cache-Control': 'no-cache' }), body: blob });
+    if (!r.ok) throw new Error('upload ' + r.status);
+  }
+  async function sbDel(paths) {
+    if (!paths.length) return;
+    await fetch(SB.url + '/storage/v1/object/' + SB.bucket, { method: 'DELETE', headers: await sbHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ prefixes: paths }) });
+  }
+  const gzip = (text) => new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
+  const gunzipText = async (res) => new Response(res.body.pipeThrough(new DecompressionStream('gzip'))).text();
+  function trimLedger(text) {
+    const lines = text.split(/\r?\n/);
+    const head = (lines[0] || '').replace(/^﻿/, '');
+    const sep = head.includes('|') ? '|' : head.includes('\t') ? '\t' : ',';
+    const cols = head.split(sep).map((c) => c.trim().toUpperCase());
+    const idx = []; cols.forEach((c, i) => { if (SB_KEEP.includes(c)) idx.push(i); });
+    const out = [];
+    for (let k = 0; k < lines.length; k++) { if (!lines[k].trim()) continue; const f = k === 0 ? cols : lines[k].split(sep); out.push(idx.map((i) => (f[i] === undefined ? '' : f[i])).join('|')); }
+    return out.join('\n');
+  }
+  function sbShowAccount() {
+    const on = !!sbSession;
+    qs('sb-login').forEach((e) => { e.hidden = on || window.bdDriveState !== 'login'; });
+    qs('sb-who').forEach((e) => { e.hidden = !on; e.textContent = on ? 'Signed in as ' + sbSession.email : ''; });
+    qs('sb-out').forEach((e) => { e.hidden = !on; });
+    qs('sb-admin').forEach((e) => { e.hidden = !on; });
+    qs('up-local').forEach((e) => { e.hidden = !!SB.url && window.bdDriveState !== 'fail' && window.bdDriveState !== 'none'; });
+  }
+  const redrawAll = () => { dash.draw('srcinfo'); dash.draw('fbtn'); dash.draw('pop'); dash.draw('tcards'); dash.draw('kpi'); dash.draw('resmsg'); dash.draw('restable'); };
   async function loadDrive() {
-    const url = window.BD_MASTER_URL;
-    if (!url) return;
+    if (!SB.url || !SB.key) { sbShowAccount(); return; }
     window.bdDriveState = 'loading';
-    ['dr-busy', 'dr-fail'].forEach((s) => document.querySelectorAll('#' + s).forEach((e) => { e.hidden = s !== 'dr-busy'; }));
-    dash.draw('srcinfo');
+    showOnly(['dr-busy', 'dr-fail'], 'dr-busy'); sbShowAccount(); dash.draw('srcinfo');
     try {
-      const res = await fetch(url, { cache: 'no-store' });
-      if (!res.ok) throw new Error('http ' + res.status);
-      const j = await res.json();
-      if (j.error) throw new Error(j.error);
-      const rows = [], info = [];
-      let month = '', year = '', updated = '';
-      for (const f of j.files || []) {
-        const parsed = bdParseLedger(f.text || '');
-        for (const r of parsed.rows) rows.push(r);
-        info.push({ name: f.name, count: parsed.rows.length });
-        if (!month) { month = parsed.month; year = parsed.year; }
-        const d = f.updated ? new Date(f.updated) : null;
-        if (d && !isNaN(d)) { const t = d.toLocaleDateString('en-GB').replace(/\//g, '-'); if (!updated || t > updated) updated = t; }
+      const r = await sbGet('master/index.json');
+      if (!r.ok) {
+        window.bdDriveState = sbSession ? 'none' : 'login';
+        showOnly(['dr-busy', 'dr-fail'], null); sbShowAccount(); dash.draw('srcinfo'); return;
       }
+      const ix = await r.json();
+      const rows = [];
+      for (const part of ix.parts || []) {
+        const pr = await sbGet(part.path);
+        if (!pr.ok) throw new Error('part ' + pr.status);
+        for (const row of bdParseLedger(await gunzipText(pr)).rows) rows.push(row);
+      }
+      const d = ix.at ? new Date(ix.at) : null;
+      const updated = d && !isNaN(d) ? d.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(/\//g, '-') : '';
       window.bdDriveState = rows.length ? 'ok' : 'none';
-      ['dr-busy', 'dr-fail'].forEach((s) => document.querySelectorAll('#' + s).forEach((e) => { e.hidden = true; }));
-      if (window.bdUpload && !window.bdUpload.drive) return; // the viewer already uploaded a file of their own
+      showOnly(['dr-busy', 'dr-fail'], null); sbShowAccount();
+      if (window.bdUpload && !window.bdUpload.drive) { dash.draw('srcinfo'); return; }
       if (rows.length) {
-        window.bdUpload = { id: 'drive-' + Date.now(), rows, files: info, month, year, drive: true, updated };
+        window.bdUpload = { id: 'master-' + (ix.at || Date.now()), rows, files: ix.files || [], month: ix.month || '', year: ix.year || '', drive: true, updated };
         window.bdPop = null;
-        dash.setParams({ src: 'drive-' + Date.now(), flt: '' });
+        dash.setParams({ src: 'master-' + Date.now(), flt: '' });
       }
-      dash.draw('srcinfo'); dash.draw('fbtn'); dash.draw('pop'); dash.draw('tcards'); dash.draw('kpi'); dash.draw('resmsg'); dash.draw('restable');
+      redrawAll();
     } catch (e) {
       window.bdDriveState = 'fail';
-      ['dr-busy', 'dr-fail'].forEach((s) => document.querySelectorAll('#' + s).forEach((e) => { e.hidden = s !== 'dr-fail'; }));
-      dash.draw('srcinfo');
+      showOnly(['dr-busy', 'dr-fail'], 'dr-fail'); sbShowAccount(); dash.draw('srcinfo');
     }
   }
+  qs('sb-login').forEach((f) => f.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    qs('sb-bad').forEach((e) => { e.hidden = true; });
+    const email = (qs('sb-email')[0] || {}).value || '', password = (qs('sb-pass')[0] || {}).value || '';
+    try { await sbAuth({ email: email.trim(), password }, 'password'); qs('sb-pass').forEach((e) => { e.value = ''; }); await loadDrive(); }
+    catch (e) { qs('sb-bad').forEach((x) => { x.hidden = false; }); }
+  }));
+  qs('sb-out').forEach((b) => b.addEventListener('click', async () => {
+    try { await fetch(SB.url + '/auth/v1/logout', { method: 'POST', headers: await sbHeaders() }); } catch (e) { /* signed out locally anyway */ }
+    sbSession = null; sbStore.set(null);
+    if (window.bdUpload && window.bdUpload.drive) window.bdUpload = null;
+    await loadDrive(); redrawAll();
+  }));
+  const ADM = ['adm-busy', 'adm-done', 'adm-fail'];
+  qs('adm-file').forEach((inp) => inp.addEventListener('change', async () => {
+    const files = [...(inp.files || [])];
+    if (!files.length) return;
+    showOnly(ADM, 'adm-busy');
+    try {
+      let old = null;
+      try { const r0 = await sbGet('master/index.json'); if (r0.ok) old = await r0.json(); } catch (e) { old = null; }
+      const stamp = Date.now(), parts = [], info = [];
+      let month = '', year = '';
+      for (let n = 0; n < files.length; n++) {
+        const buf = await files[n].arrayBuffer();
+        let text = new TextDecoder('utf-8').decode(buf);
+        if (text.includes('�')) text = new TextDecoder('windows-1252').decode(buf);
+        const parsed = bdParseLedger(text);
+        if (!month) { month = parsed.month; year = parsed.year; }
+        const path = 'master/' + stamp + '-' + n + '.txt.gz';
+        await sbPut(path, await gzip(trimLedger(text)), 'application/gzip');
+        parts.push({ path }); info.push({ name: files[n].name, count: parsed.rows.length });
+      }
+      await sbPut('master/index.json', new Blob([JSON.stringify({ parts, files: info, month, year, at: new Date().toISOString() })]), 'application/json');
+      if (old && old.parts) await sbDel(old.parts.map((x) => x.path).filter((x) => !parts.some((p) => p.path === x)));
+      showOnly(ADM, 'adm-done');
+      if (window.bdUpload && !window.bdUpload.drive) window.bdUpload = null;
+      await loadDrive();
+    } catch (e) {
+      showOnly(ADM, 'adm-fail');
+    } finally { inp.value = ''; }
+  }));
   setTimeout(loadDrive, 0);
   document.querySelectorAll('#up-file').forEach((inp) => inp.addEventListener('change', () => loadFiles([...(inp.files || [])], inp)));
   document.querySelectorAll('#upload').forEach((zone) => {

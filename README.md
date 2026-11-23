@@ -23,15 +23,15 @@ and is never sent to any server or saved anywhere.
 
 Download `index.html` from the latest release and open it in Chrome or Edge.
 
-## Division master file from Google Drive
+## Division master file (Supabase)
 
-The Division admin keeps the latest LDG text files in one Google Drive folder. The
-website reads them automatically on opening, so viewers do not need to upload.
+The Division admin signs in on the website and uploads the latest LDG text files. They are
+stored in a private Supabase Storage bucket (`ledger`), and every signed-in viewer sees them
+without uploading. Only the used columns are stored, gzip compressed.
 
-1. Create a Drive folder and upload the latest LDG `.txt` files into it.
-2. At script.google.com, create a project, paste `drive/Code.gs`, and set `FOLDER_ID`.
-3. Deploy > New deployment > Web app (Execute as: Me, Who has access: Anyone).
-4. Put the Web app URL in `window.BD_MASTER_URL` near the top of `index.html`.
-
-Each month, replace the files in the Drive folder; the website picks them up on the next
-opening. Note: anyone who has the website link can see the data it loads.
+1. Create a free Supabase project. In Authentication, turn off new user sign ups.
+2. Add users in Authentication > Users (the admin login and the viewer logins, auto confirmed).
+3. Put the admin email in `supabase/setup.sql` and run it in the SQL Editor.
+4. Put the Project URL and the anon / publishable key in `BD_SUPABASE_URL` and
+   `BD_SUPABASE_KEY` near the top of `index.html`. The anon key is meant to be public;
+   the storage policies protect the data.
