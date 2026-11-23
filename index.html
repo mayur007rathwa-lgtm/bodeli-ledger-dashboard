@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bodeli Division Ledger Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:wght@400&display=swap">
+<style>
+  :root {
+    --color-fg: #1c1f24; --color-fg-muted: #5d6470; --color-bg: #ffffff; --color-panel: #f4f6f8; --color-border-line: #d9dde3; --color-bad: #b3261e;
+    --cds-surface-popover: #ffffff; --cds-border: #d0d5dc; --cds-shadow-popover: 0 8px 24px rgba(20, 24, 31, .14); --cds-text-secondary: #5d6470;
+    --font-anthropic-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; --font-anthropic-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+    --cds-font-size-caption: 12px; --cds-font-size-body: 14px; --cds-font-size-heading: 17px; --cds-font-size-title: 28px; --cds-font-weight-medium: 600;
+    --cds-gap-xs: 4px; --cds-gap-sm: 8px; --cds-gap-md: 12px; --cds-gap-xl: 24px; --cds-pad-md: 10px; --cds-pad-lg: 16px; --cds-radius: 8px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --color-fg: #e7e9ec; --color-fg-muted: #a2a9b4; --color-bg: #15181c; --color-panel: #1e2227; --color-border-line: #343a42; --color-bad: #f2b8b5;
+      --cds-surface-popover: #22262c; --cds-border: #3a4049; --cds-shadow-popover: 0 8px 24px rgba(0, 0, 0, .5); --cds-text-secondary: #a2a9b4; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--color-bg); color: var(--color-fg); font-family: var(--font-anthropic-sans); font-size: 14px; }
+  #dash-root { max-width: 1400px; margin: 0 auto; padding: 24px max(16px, env(safe-area-inset-right, 0px)) 40px max(16px, env(safe-area-inset-left, 0px)); }
+  [hidden] { display: none !important; }
+</style>
+<script>
+  // Small stand-in for the dashboard runtime so the page works as a plain website.
+  (function () {
+    const P = { q: '', mq: '', flt: '', src: '' };
+    const draws = {}, ons = [];
+    const runOne = (n) => document.querySelectorAll('[data-draw="' + n + '"]').forEach((el) => { try { draws[n] && draws[n](el); } catch (e) { console.error(e); } });
+    const runAll = () => { ons.forEach((f) => { try { f(); } catch (e) { console.error(e); } }); Object.keys(draws).forEach(runOne); };
+    window.dash = {
+      params: () => ({ ...P }),
+      setParams: (o) => { Object.assign(P, o); runAll(); },
+      draw: (n, f) => { if (f) draws[n] = f; else runOne(n); },
+      onData: (f) => { ons.push(f); }
+    };
+    window.__bdRunAll = runAll;
+    let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => runOne('pop'), 150); });
+    const downloads = {
+      save: ({ filename, data }) => new Promise((resolve) => {
+        const blob = data instanceof Blob ? data : new Blob([data]);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        resolve({ status: 'saved' });
+      })
+    };
+    window.claude = { use: async (name) => (name === 'downloads' ? downloads : null) };
+  })();
+</script>
+</head>
+<body>
+<div id="dash-root">
+<style>
+  .bd { position: relative; display: flex; flex-direction: column; gap: var(--cds-gap-xl); font-family: var(--font-anthropic-sans); color: var(--color-fg); }
+  .bd-head h1 { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); margin: 0; text-wrap: balance; }
+  .bd-eyebrow { font-size: var(--cds-font-size-caption); letter-spacing: .06em; text-transform: uppercase; color: var(--color-fg-muted); margin: 0 0 var(--cds-gap-xs); }
+  .bd-take { margin: var(--cds-gap-sm) 0 0; color: var(--color-fg-muted); max-width: 70ch; line-height: 1.5; }
+  .bd-take b { color: var(--color-fg); font-weight: var(--cds-font-weight-medium); font-variant-numeric: tabular-nums; }
+  .bd-searches { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: var(--cds-gap-md); }
+  .bd-search { display: flex; flex-direction: column; gap: var(--cds-gap-xs); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); min-width: 0; }
+  .bd-search input { font: inherit; font-size: 16px; color: var(--color-fg); background-color: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: 10px 12px; width: 100%; box-sizing: border-box; }
+  .bd-search input:focus-visible, .bd-hf:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 1px; }
+  .bd-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--cds-gap-md); align-items: end; }
+  .bd-filters label { display: flex; flex-direction: column; gap: var(--cds-gap-xs); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); min-width: 0; }
+  .bd-filters select { width: 100%; min-width: 0; }
+  .bd-btn { font: inherit; font-size: var(--cds-font-size-body); padding: 6px 12px; border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); background-color: var(--color-panel); color: var(--color-fg); cursor: pointer; min-height: 34px; }
+  .bd-btn:hover { border-color: var(--color-fg-muted); }
+  .bd-btn:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 2px; }
+  .bd-btn:disabled { opacity: .5; cursor: default; }
+  .bd-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--cds-gap-md); }
+  .bd-kpi { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); display: flex; flex-direction: column; gap: var(--cds-gap-xs); min-width: 0; }
+  .bd-kpi .k { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .bd-kpi .v { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: 30px; font-variant-numeric: tabular-nums; line-height: 1.15; overflow-wrap: anywhere; }
+  .bd-kpi .u { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .bd-tcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: var(--cds-gap-sm); }
+  .bd-tcard { font: inherit; text-align: left; cursor: pointer; background: var(--color-panel); color: var(--color-fg); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-md); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .bd-tcard:hover { border-color: var(--color-fg-muted); }
+  .bd-tcard:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 2px; }
+  .bd-tcard .tn { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); font-weight: var(--cds-font-weight-medium); overflow-wrap: anywhere; }
+  .bd-tcard .tv { font-family: var(--font-anthropic-serif); font-size: 24px; font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .bd-tcard .tp { font-size: 11px; color: var(--cds-text-secondary); font-variant-numeric: tabular-nums; }
+  .bd-tcard.on { background: var(--color-fg); color: var(--color-bg); border-color: var(--color-fg); }
+  .bd-tcard.on .tn, .bd-tcard.on .tp { color: var(--color-bg); }
+  .bd-tcard.dim { opacity: .55; }
+  .bd-kpi.click { cursor: pointer; }
+  .bd-card { min-width: 0; display: flex; flex-direction: column; gap: var(--cds-gap-sm); }
+  .bd-card h2 { font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); margin: 0; }
+  .bd-card .sub { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); margin: 0; }
+  .bd-listbar { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); align-items: center; justify-content: space-between; }
+  .bd-actions { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); align-items: center; }
+  .bd-status { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .bd-status.bad { color: var(--color-bad); }
+  .bd-msg { color: var(--color-fg-muted); font-size: var(--cds-font-size-body); margin: 0; min-height: 1.4em; }
+  .bd-tablewrap { overflow: auto; max-height: 640px; border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); }
+  .bd-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .bd-table th, .bd-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--color-border-line); white-space: nowrap; }
+  .bd-table th { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); font-weight: var(--cds-font-weight-medium); background: var(--color-panel); position: sticky; top: 0; z-index: 1; vertical-align: top; }
+  .bd-table th .h { display: block; margin-bottom: 4px; }
+  .bd-hf-unused { font: inherit; font-size: 12px; width: 100%; min-width: 70px; box-sizing: border-box; padding: 4px 6px; border: 1px solid var(--color-border-line); border-radius: 4px; background-color: var(--color-bg); color: var(--color-fg); }
+  .bd-table td.num, .bd-table th.num { text-align: right; }
+  .bd-table tbody tr:last-child td { border-bottom: 0; }
+  .bd-table tbody tr:hover td { background: var(--color-panel); }
+  .bd-upload { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm) var(--cds-gap-md); align-items: center; padding: var(--cds-pad-md) var(--cds-pad-lg); border: 1px dashed var(--color-border-line); border-radius: var(--cds-radius); background: var(--color-panel); }
+  .bd-upload .t { font-weight: var(--cds-font-weight-medium); }
+  .bd-upload .src { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+  .bd-upl { display: flex; flex-direction: column; gap: 4px; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); min-width: 0; }
+  .bd-fileinput { font: inherit; font-size: 14px; color: var(--color-fg); max-width: 100%; }
+  .bd-fileinput::file-selector-button { font: inherit; padding: 6px 12px; margin-right: 8px; border: 1px solid var(--color-fg-muted); border-radius: var(--cds-radius); background-color: var(--color-bg); color: var(--color-fg); cursor: pointer; }
+  .bd-fileinput:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 2px; }
+  .bd-drop { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .bd-upload.drag { border-color: var(--color-fg); }
+  .bd-fl { display: flex; flex-direction: column; gap: var(--cds-gap-xs); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); min-width: 0; }
+  .bd-fbtn { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; text-align: left; }
+  .bd-fbtn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .bd-fbtn.on, .bd-hbtn.on { border-color: var(--color-fg); font-weight: var(--cds-font-weight-medium); }
+  .bd-hbtn { font: inherit; font-size: 11px; margin-left: 6px; padding: 1px 6px; border: 1px solid var(--color-border-line); border-radius: 4px; background-color: var(--color-bg); color: var(--color-fg); cursor: pointer; vertical-align: middle; }
+  .bd-hbtn.on { background-color: var(--color-fg); color: var(--color-bg); }
+  .bd-hbtn:focus-visible, .bd-pop button:focus-visible, .bd-pop input:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 1px; }
+  .bd-pop { position: absolute; z-index: 20; width: min(330px, calc(100% - 8px)); background: var(--cds-surface-popover); border: 1px solid var(--cds-border); box-shadow: var(--cds-shadow-popover); border-radius: var(--cds-radius); padding: var(--cds-pad-md); display: none; flex-direction: column; gap: var(--cds-gap-sm); font-size: 13px; color: var(--color-fg); box-sizing: border-box; }
+  .bd-pop .ttl { font-weight: var(--cds-font-weight-medium); }
+  .bd-pop input[type="search"] { font: inherit; font-size: 14px; width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--color-border-line); border-radius: 4px; background-color: var(--color-bg); color: var(--color-fg); }
+  .bd-pop .list { max-height: 260px; overflow: auto; border: 1px solid var(--color-border-line); border-radius: 4px; padding: 4px 0; }
+  .bd-pop .it { display: flex; align-items: center; gap: 6px; padding: 3px 8px; cursor: pointer; }
+  .bd-pop .it:hover { background: var(--color-panel); }
+  .bd-pop .it .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .bd-pop .it .ct { color: var(--cds-text-secondary); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .bd-pop .it.day { padding-left: 34px; }
+  .bd-pop .it.all { border-bottom: 1px solid var(--color-border-line); margin-bottom: 2px; font-weight: var(--cds-font-weight-medium); }
+  .bd-pop .tg { font: inherit; border: 0; background: none; color: var(--color-fg-muted); cursor: pointer; width: 18px; padding: 0; }
+  .bd-pop .hint { font-size: 11px; color: var(--cds-text-secondary); }
+  .bd-pop .row { display: flex; gap: var(--cds-gap-sm); justify-content: flex-end; flex-wrap: wrap; }
+  .bd-note { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); line-height: 1.5; }
+  .bd-note summary { cursor: pointer; color: var(--color-fg); }
+</style>
+
+<div class="bd" lang="en">
+  <header class="bd-head" id="top">
+    <p class="bd-eyebrow">MGVCL · Baroda O&amp;M Circle · Bodeli O&amp;M Division · Consumer Ledger</p>
+    <h1>Bodeli Division Ledger Dashboard</h1>
+    <p class="bd-take" data-read lang="en"><b data-draw="kpi" data-k="consumers">—</b> of <b data-draw="kpi" data-k="total">—</b> ledger consumers match the current search and filters.</p>
+  </header>
+
+  <section class="bd-upload" id="upload" aria-label="Load ledger text file">
+    <span class="t">Ledger data</span>
+    <span class="src" data-draw="srcinfo">—</span>
+    <label class="bd-upl" for="up-file"><span>Upload LDG text file</span>
+      <input type="file" id="up-file" class="bd-fileinput" multiple>
+    </label>
+    <span class="bd-drop">or drag and drop the file here</span>
+    <button type="button" id="up-reset" class="bd-btn" hidden>Clear uploaded data</button>
+    <span class="bd-status" id="up-busy" hidden>Reading file…</span>
+    <span class="bd-status bad" id="up-fail" hidden>This file could not be read. Upload the LDG text export with the header row (MONTH|YEAR|…|CONSUMER_NO|…).</span>
+  </section>
+
+  <div class="bd-searches" id="search">
+    <label class="bd-search" for="q">Search consumer
+      <input type="search" id="q" name="q" autocomplete="off" placeholder="Consumer number, name or village">
+    </label>
+    <label class="bd-search" for="mq">Search meter number
+      <input type="search" id="mq" name="mq" autocomplete="off" placeholder="Meter number, letters or digits (e.g. MGVCL 1880351)">
+    </label>
+  </div>
+
+  <section class="bd-filters" id="filters" aria-label="Filters">
+    <div class="bd-fl"><span>Subdivision (SDN)</span><button type="button" class="bd-btn bd-fbtn" data-fcol="sdn" data-flabel="Subdivision (SDN)" aria-label="Filter Subdivision (SDN)"><span data-draw="fbtn" data-fcol="sdn">—</span><span aria-hidden="true">▾</span></button></div>
+    <div class="bd-fl"><span>Tariff</span><button type="button" class="bd-btn bd-fbtn" data-fcol="tariff" data-flabel="Tariff" aria-label="Filter Tariff"><span data-draw="fbtn" data-fcol="tariff">—</span><span aria-hidden="true">▾</span></button></div>
+    <div class="bd-fl"><span>Meter Status</span><button type="button" class="bd-btn bd-fbtn" data-fcol="meter_status" data-flabel="Meter Status" aria-label="Filter Meter Status"><span data-draw="fbtn" data-fcol="meter_status">—</span><span aria-hidden="true">▾</span></button></div>
+    <div class="bd-fl"><span>Feeder</span><button type="button" class="bd-btn bd-fbtn" data-fcol="feeder" data-flabel="Feeder" aria-label="Filter Feeder"><span data-draw="fbtn" data-fcol="feeder">—</span><span aria-hidden="true">▾</span></button></div>
+    <div class="bd-fl"><span>Village</span><button type="button" class="bd-btn bd-fbtn" data-fcol="village" data-flabel="Village" aria-label="Filter Village"><span data-draw="fbtn" data-fcol="village">—</span><span aria-hidden="true">▾</span></button></div>
+    <div class="bd-fl"><span>Solar Consumer</span><button type="button" class="bd-btn bd-fbtn" data-fcol="solar" data-flabel="Solar Consumer" aria-label="Filter Solar Consumer"><span data-draw="fbtn" data-fcol="solar">—</span><span aria-hidden="true">▾</span></button></div>
+    <button type="button" id="f-reset" class="bd-btn">Clear all search and filters</button>
+  </section>
+
+  <section class="bd-kpis" id="kpis" aria-label="Key figures">
+    <div class="bd-kpi click" id="kpi-consumers" role="button" tabindex="0" title="Show all tariffs in the list"><span class="k">Total Consumers</span><span class="v" data-draw="kpi" data-k="consumers">—</span><span class="u">Ledger rows matching</span></div>
+    <div class="bd-kpi" id="kpi-theft"><span class="k">Theft + Litigation Arrears</span><span class="v" data-draw="kpi" data-k="theft_lit_lakh">—</span><span class="u">₹ Lakh</span></div>
+  </section>
+
+  <section class="bd-card" id="tariff-cards">
+    <h2>Consumers by Tariff</h2>
+    <p class="sub">Press a tariff card to show only that tariff in the Consumer List. Press it again to remove it. You can pick more than one card.</p>
+    <div class="bd-tcards" data-draw="tcards" role="group" aria-label="Tariff cards"></div>
+  </section>
+
+  <section class="bd-card" id="results">
+    <div class="bd-listbar">
+      <div>
+        <h2>Consumer List</h2>
+        <p class="sub">First 200 matching consumers from the uploaded file are shown here. Export gives the full matching list.</p>
+      </div>
+      <div class="bd-actions" id="export">
+        <button type="button" id="ex-xlsx" class="bd-btn">Export Excel</button>
+        <button type="button" id="ex-pdf" class="bd-btn">Export PDF</button>
+        <button type="button" id="hf-clear" class="bd-btn">Clear column filters</button>
+        <span class="bd-status" id="ex-busy" hidden>Preparing file…</span>
+        <span class="bd-status" id="ex-done" hidden>File is ready.</span>
+        <span class="bd-status bad" id="ex-fail" hidden>Export failed or was cancelled.</span>
+        <span class="bd-status bad" id="ex-none" hidden>No consumers to export.</span>
+        <span class="bd-status" id="ex-pdfcap" hidden>PDF has the first 3,000 rows. Use Excel for the full list.</span>
+        <span class="bd-status bad" id="ex-unavail" hidden>File download is not available in this view.</span>
+      </div>
+    </div>
+    <p class="bd-msg" data-draw="resmsg">—</p>
+    <div class="bd-tablewrap">
+      <table class="bd-table">
+        <thead><tr>
+          <th data-field="sr"><span class="h">SR No</span></th>
+          <th data-field="sdn"><span class="h">SDN<button type="button" class="bd-hbtn" data-fcol="sdn" data-flabel="SDN" aria-label="Filter SDN">▾</button></span></th>
+          <th data-field="consumer_no"><span class="h">Consumer No<button type="button" class="bd-hbtn" data-fcol="consumer_no" data-flabel="Consumer No" aria-label="Filter Consumer No">▾</button></span></th>
+          <th data-field="consumer_name"><span class="h">Consumer Name<button type="button" class="bd-hbtn" data-fcol="consumer_name" data-flabel="Consumer Name" aria-label="Filter Consumer Name">▾</button></span></th>
+          <th data-field="address1"><span class="h">Address 1<button type="button" class="bd-hbtn" data-fcol="address1" data-flabel="Address 1" aria-label="Filter Address 1">▾</button></span></th>
+          <th data-field="address2"><span class="h">Address 2<button type="button" class="bd-hbtn" data-fcol="address2" data-flabel="Address 2" aria-label="Filter Address 2">▾</button></span></th>
+          <th data-field="village"><span class="h">Village<button type="button" class="bd-hbtn" data-fcol="village" data-flabel="Village" aria-label="Filter Village">▾</button></span></th>
+          <th data-field="meter_no"><span class="h">Meter No<button type="button" class="bd-hbtn" data-fcol="meter_no" data-flabel="Meter No" aria-label="Filter Meter No">▾</button></span></th>
+          <th data-field="connection_date"><span class="h">Connection Date<button type="button" class="bd-hbtn" data-fcol="connection_date" data-flabel="Connection Date" aria-label="Filter Connection Date">▾</button></span></th>
+          <th data-field="census_code"><span class="h">Census Code<button type="button" class="bd-hbtn" data-fcol="census_code" data-flabel="Census Code" aria-label="Filter Census Code">▾</button></span></th>
+          <th data-field="tariff"><span class="h">Tariff<button type="button" class="bd-hbtn" data-fcol="tariff" data-flabel="Tariff" aria-label="Filter Tariff">▾</button></span></th>
+          <th data-field="feeder_no"><span class="h">Feeder No<button type="button" class="bd-hbtn" data-fcol="feeder_no" data-flabel="Feeder No" aria-label="Filter Feeder No">▾</button></span></th>
+          <th data-field="feeder"><span class="h">Feeder<button type="button" class="bd-hbtn" data-fcol="feeder" data-flabel="Feeder" aria-label="Filter Feeder">▾</button></span></th>
+          <th data-field="trans_location"><span class="h">Trans Location<button type="button" class="bd-hbtn" data-fcol="trans_location" data-flabel="Trans Location" aria-label="Filter Trans Location">▾</button></span></th>
+          <th data-field="meter_status"><span class="h">Meter Status<button type="button" class="bd-hbtn" data-fcol="meter_status" data-flabel="Meter Status" aria-label="Filter Meter Status">▾</button></span></th>
+          <th data-field="solar"><span class="h">Solar<button type="button" class="bd-hbtn" data-fcol="solar" data-flabel="Solar" aria-label="Filter Solar">▾</button></span></th>
+          <th class="num" data-field="contract_load_kw"><span class="h">Load (kW)<button type="button" class="bd-hbtn" data-fcol="contract_load_kw" data-flabel="Load (kW)" aria-label="Filter Load (kW)">▾</button></span></th>
+          <th class="num" data-field="theft_litigation_arrears"><span class="h">Theft + Litigation (₹)<button type="button" class="bd-hbtn" data-fcol="theft_litigation_arrears" data-flabel="Theft + Litigation (₹)" aria-label="Filter Theft + Litigation (₹)">▾</button></span></th>
+          <th data-field="pdc_date"><span class="h">PDC Date<button type="button" class="bd-hbtn" data-fcol="pdc_date" data-flabel="PDC Date" aria-label="Filter PDC Date">▾</button></span></th>
+        </tr></thead>
+        <tbody data-draw="restable"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="bd-pop" data-draw="pop" role="dialog" aria-label="Column filter"></div>
+
+  <details class="bd-note" id="notes">
+    <summary>About the data and filters</summary>
+    <p>Data comes only from the LDG text file(s) you upload. Consumption = CONSUMPTION_UNIT. Theft + Litigation Arrears = THEFT_ARREARS + LITIGATION_ARREARS. Meter No = METER_NO. Solar Consumer = SOLAR_CONSUMER (Y/N). BLANK or NOT MAPPED means the ledger cell is empty.</p>
+    <p>Upload LDG text file: choose one or more ledger text exports (for example 034LDG102026.txt, '|' separated with a header row). Several subdivision files can be chosen together. The file is read only in your browser and is not saved to the dashboard, so after a page reload it has to be uploaded again.</p>
+    <p>Consumer search matches any part of the consumer number, name or village. Meter search ignores spaces, dashes, dots and capital letters, so "mgvcl1880351", "MGVCL_1880351" and "1880351" all find the same meter. Filters work like Excel: press ▾ on a filter or column, tick one or more values, and press Apply. Type in the filter search box to narrow the list. If nothing in the list matches what you typed, Apply keeps every value that contains the typed text. Connection Date and PDC Date are grouped by month: tick a whole month, or open it with ▸ and tick single dates. Filters on different columns work together.</p>
+  </details>
+</div>
+
+<script>
+  // Reads an MGVCL LDG ledger text export (header row, '|' separated) into one row per consumer.
+  window.bdParseLedger = function (text) {
+    const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
+    if (lines.length < 2) throw new Error('empty');
+    const head0 = lines[0].replace(/^﻿/, '');
+    const sep = head0.includes('|') ? '|' : head0.includes('\t') ? '\t' : ',';
+    const head = head0.split(sep).map((s) => s.trim().toUpperCase());
+    const ix = (n) => head.indexOf(n);
+    const need = ['CONSUMER_NO', 'SUBDIV_NAME'];
+    if (need.some((n) => ix(n) < 0)) throw new Error('header');
+    const I = {
+      cno: ix('CONSUMER_NO'), name: ix('CONSUMER_NAME'), sdn: ix('SUBDIV_NAME'), vil: ix('VILLAGE_NAME'), tar: ix('TARRIF_SHORT') >= 0 ? ix('TARRIF_SHORT') : ix('TARRIF'),
+      fdr: ix('FEEDER_NAME'), ms: ix('METER_STATUS'), solar: ix('SOLAR_CONSUMER'), load: ix('CONTRACT_LOAD'), unit: ix('CONSUMPTION_UNIT'),
+      theft: ix('THEFT_ARREARS'), lit: ix('LITIGATION_ARREARS'), meter: ix('METER_NO'),
+      a1: ix('ADDRESS1'), a2: ix('ADDRESS2'), cen: ix('CENCUS_CODE') >= 0 ? ix('CENCUS_CODE') : ix('CENSUS_CODE'), tl: ix('TRANS_LOCATION'),
+      cd: ix('CONNECTION_DATE'), pdc: ix('PDC_DATE'), fno: ix('FEEDER_NO'),
+      month: ix('MONTH'), year: ix('YEAR')
+    };
+    const sp = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
+    const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
+    const dmy = (v) => { const s = sp(v); const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}-${m[2]}-${m[1]}` : s; };
+    const rows = [];
+    let month = '', year = '';
+    for (let k = 1; k < lines.length; k++) {
+      const f = lines[k].split(sep);
+      if (f.length < 5) continue;
+      const g = (i) => (i >= 0 ? f[i] : '');
+      if (!month) { month = sp(g(I.month)); year = sp(g(I.year)); }
+      rows.push({
+        consumer_no: sp(g(I.cno)), consumer_name: sp(g(I.name)), sdn: sp(g(I.sdn)) || 'BLANK', village: sp(g(I.vil)) || 'NOT MAPPED',
+        tariff: sp(g(I.tar)) || 'BLANK', feeder: sp(g(I.fdr)) || 'NOT MAPPED', meter_status: sp(g(I.ms)) || 'BLANK',
+        solar: sp(g(I.solar)).toUpperCase() === 'Y' ? 'Y' : 'N', contract_load_kw: Math.round(num(g(I.load)) * 100) / 100,
+        theft_litigation_arrears: Math.round(num(g(I.theft)) + num(g(I.lit))), meter_no: sp(g(I.meter)),
+        address1: sp(g(I.a1)), address2: sp(g(I.a2)), census_code: sp(g(I.cen)), trans_location: sp(g(I.tl)),
+        connection_date: dmy(g(I.cd)), pdc_date: dmy(g(I.pdc)), feeder_no: sp(g(I.fno))
+      });
+    }
+    if (!rows.length) throw new Error('norows');
+    return { rows, month, year };
+  };
+
+  // One rule for the two search boxes and the column filters. skip = a column whose own filter is left out (for that column's value list).
+  window.bdFlt = function (p) { try { return JSON.parse((p || dash.params()).flt || '{}') || {}; } catch (e) { return {}; } };
+  window.bdMatch = function (p, skip) {
+    const norm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const q = String(p.q || '').trim().toLowerCase();
+    const mq = norm(p.mq);
+    const tests = Object.entries(bdFlt(p)).filter(([c]) => c !== skip).map(([c, f]) => {
+      if (f && f.t) { const t = String(f.t).toLowerCase(); return (d) => String(d[c] ?? '').toLowerCase().includes(t); }
+      const V = new Set((f && f.v) || []), M = new Set((f && f.m) || []);
+      return (d) => { const s = String(d[c] ?? ''); return V.has(s) || (M.size > 0 && M.has(s.slice(3))); };
+    });
+    return (d) => (!q || String(d.consumer_no).includes(q) || String(d.consumer_name).toLowerCase().includes(q) || String(d.village).toLowerCase().includes(q))
+      && (!mq || norm(d.meter_no).includes(mq))
+      && tests.every((f) => f(d));
+  };
+
+
+  // Totals and list from the uploaded file, worked out in this browser.
+  let bdMemo = { key: null };
+  window.bdCompute = function () {
+    const u = window.bdUpload;
+    const p = dash.params();
+    const key = (u ? u.id : 'none') + '|' + JSON.stringify(p);
+    if (bdMemo.key === key) return bdMemo.val;
+    let val = null;
+    if (u) {
+      const ok = bdMatch(p);
+      const list = []; let n = 0, tl = 0;
+      for (const d of u.rows) {
+        if (!ok(d)) continue;
+        n++; tl += +d.theft_litigation_arrears || 0;
+        if (list.length < 200) list.push(Object.assign({ sr: list.length + 1 }, d));
+      }
+      val = { total: u.rows.length, consumers: n, theft_lit_lakh: Math.round(tl / 1e3) / 100, list };
+    }
+    bdMemo = { key, val };
+    return val;
+  };
+</script>
+
+<script>
+  window.bdFmt = {
+    lakh: (v) => (+v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    int: (v) => Math.round(+v).toLocaleString('en-IN'),
+    num: (v) => (+v).toLocaleString('en-IN', { maximumFractionDigits: 2 })
+  };
+  window.bdCols = [
+    ['sr', 'SR No', 'n', 20, 7],
+    ['sdn', 'SDN', 't', 42, 14],
+    ['consumer_no', 'Consumer No', 't', 46, 14],
+    ['consumer_name', 'Consumer Name', 't', 92, 30],
+    ['address1', 'Address 1', 't', 74, 26],
+    ['address2', 'Address 2', 't', 62, 22],
+    ['village', 'Village', 't', 52, 18],
+    ['meter_no', 'Meter No', 't', 60, 20],
+    ['connection_date', 'Conn Date', 't', 40, 14, 'Connection Date'],
+    ['census_code', 'Census Code', 't', 36, 12],
+    ['tariff', 'Tariff', 't', 24, 8],
+    ['feeder_no', 'Fdr No', 't', 20, 9, 'Feeder No'],
+    ['feeder', 'Feeder', 't', 66, 24],
+    ['trans_location', 'Trans Loc', 't', 34, 13, 'Trans Location'],
+    ['meter_status', 'Mtr St', 't', 22, 10, 'Meter Status'],
+    ['solar', 'Solar', 't', 18, 7],
+    ['contract_load_kw', 'Load (kW)', 'n', 26, 10],
+    ['theft_litigation_arrears', 'Theft+Lit (Rs)', 'n', 38, 18, 'Theft + Litigation (Rs)'],
+    ['pdc_date', 'PDC Date', 't', 40, 13]
+  ];
+
+  function allRows() { return window.bdUpload ? window.bdUpload.rows : null; }
+
+  // ---------- Excel style filters ----------
+  const DATE_COLS = { connection_date: 1, pdc_date: 1 };
+  const NUM_COLS = { contract_load_kw: 1, theft_litigation_arrears: 1 };
+  const isoOf = (s) => { const m = String(s).match(/^(\d{2})-(\d{2})-(\d{4})$/); return m ? m[3] + m[2] + m[1] : ''; };
+  const monthName = (mk) => { const m = mk.match(/^(\d{2})-(\d{4})$/); return m ? (MONTHS[+m[1] - 1] || m[1]) + '-' + m[2] : '(Blank)'; };
+  const setFlt = (col, f) => { const all = bdFlt(); if (f) all[col] = f; else delete all[col]; dash.setParams({ flt: Object.keys(all).length ? JSON.stringify(all) : '' }); };
+
+  dash.draw('fbtn', (el) => {
+    const f = bdFlt()[el.dataset.fcol];
+    el.textContent = !f ? 'All' : f.t ? 'Contains "' + f.t + '"'
+      : ((f.v || []).length + (f.m || []).length === 1 && !(f.m || []).length) ? ((f.v[0] === '' ? '(Blank)' : f.v[0]))
+      : ((f.m || []).length ? (f.m.length + ' month' + (f.m.length > 1 ? 's' : '') + ((f.v || []).length ? ' + ' + f.v.length + ' dates' : '')) : f.v.length + ' selected');
+  });
+  dash.onData(() => {
+    const f = bdFlt();
+    document.querySelectorAll('[data-fcol].bd-fbtn, [data-fcol].bd-hbtn').forEach((b) => b.classList.toggle('on', !!f[b.dataset.fcol]));
+  });
+
+  document.querySelectorAll('.bd-fbtn, .bd-hbtn').forEach((b) => b.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (!allRows()) return;
+    const same = window.bdPop && window.bdPop.col === b.dataset.fcol && window.bdPop.anchor === b;
+    window.bdPop = same ? null : { col: b.dataset.fcol, label: b.dataset.flabel, anchor: b, search: '', sel: null, open: {} };
+    dash.draw('pop');
+  }));
+  const closePop = () => { if (window.bdPop) { window.bdPop = null; dash.draw('pop'); } };
+  document.addEventListener('click', (ev) => { const p = document.querySelector('.bd-pop'); if (window.bdPop && p && !ev.composedPath().includes(p)) closePop(); });
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closePop(); });
+
+  dash.draw('pop', (el) => {
+    const st = window.bdPop, rows = allRows();
+    el.replaceChildren();
+    if (!st || !rows) { el.style.display = 'none'; return; }
+    el.style.display = 'flex';
+    const col = st.col, isDate = !!DATE_COLS[col];
+    // values left after every other filter, with counts
+    const ok = bdMatch(dash.params(), col);
+    const counts = new Map();
+    for (const d of rows) if (ok(d)) { const k = String(d[col] ?? ''); counts.set(k, (counts.get(k) || 0) + 1); }
+    let values = [...counts.keys()];
+    if (isDate) values.sort((a, b) => (isoOf(b) || '0').localeCompare(isoOf(a) || '0'));
+    else if (NUM_COLS[col]) values.sort((a, b) => (+a) - (+b));
+    else values.sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b, undefined, { numeric: true })));
+    const f = bdFlt()[col];
+    if (!st.sel) {
+      if (!f) st.sel = new Set(values);
+      else if (f.t) { st.sel = new Set(); st.search = f.t; }
+      else { const V = new Set(f.v || []), M = new Set(f.m || []); st.sel = new Set(values.filter((v) => V.has(v) || M.has(v.slice(3)))); }
+    }
+    const label = (v) => (v === '' ? '(Blank)' : NUM_COLS[col] ? bdFmt.num(v) : v);
+    const shown = () => { const t = st.search.trim().toLowerCase(); return t ? values.filter((v) => label(v).toLowerCase().includes(t) || v.toLowerCase().includes(t)) : values; };
+
+    const mk = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+    el.append(mk('div', 'ttl', 'Filter: ' + st.label));
+    const sb = mk('input'); sb.type = 'search'; sb.placeholder = isDate ? 'Search month or date (e.g. 04-2010)' : 'Search values or type text'; sb.value = st.search; sb.setAttribute('aria-label', 'Search filter values');
+    el.append(sb);
+    const list = mk('div', 'list'); el.append(list);
+    const hint = mk('div', 'hint'); el.append(hint);
+
+    const box = (checked, mixed, onChange) => { const c = mk('input'); c.type = 'checkbox'; c.checked = checked; c.indeterminate = !!mixed; c.addEventListener('change', () => onChange(c.checked)); return c; };
+    const item = (cls, chk, name, count, toggle) => {
+      const r = mk('label', 'it' + (cls ? ' ' + cls : ''));
+      if (toggle) r.append(toggle);
+      r.append(chk, mk('span', 'nm', name));
+      if (count != null) r.append(mk('span', 'ct', bdFmt.int(count)));
+      return r;
+    };
+    const CAP = 500;
+    function render() {
+      list.replaceChildren();
+      const vs = shown();
+      const allOn = vs.length > 0 && vs.every((v) => st.sel.has(v)), someOn = vs.some((v) => st.sel.has(v));
+      list.append(item('all', box(allOn, !allOn && someOn, (on) => { vs.forEach((v) => (on ? st.sel.add(v) : st.sel.delete(v))); render(); }), st.search.trim() ? 'Select all shown' : 'Select all', null));
+      if (isDate) {
+        const groups = new Map();
+        vs.forEach((v) => { const mkey = v === '' ? '' : v.slice(3); if (!groups.has(mkey)) groups.set(mkey, []); groups.get(mkey).push(v); });
+        let n = 0;
+        for (const [mkey, days] of groups) {
+          if (n++ >= CAP) break;
+          const on = days.every((v) => st.sel.has(v)), some = days.some((v) => st.sel.has(v));
+          const tot = days.reduce((a, v) => a + counts.get(v), 0);
+          const tg = mk('button', 'tg', st.open[mkey] ? '▾' : '▸'); tg.type = 'button'; tg.setAttribute('aria-label', 'Show dates');
+          tg.addEventListener('click', (ev) => { ev.preventDefault(); st.open[mkey] = !st.open[mkey]; render(); });
+          list.append(item('', box(on, !on && some, (c) => { days.forEach((v) => (c ? st.sel.add(v) : st.sel.delete(v))); render(); }), monthName(mkey), tot, mkey ? tg : mk('span', 'tg', '')));
+          if (st.open[mkey] && mkey) days.forEach((v) => list.append(item('day', box(st.sel.has(v), false, (c) => { c ? st.sel.add(v) : st.sel.delete(v); render(); }), v, counts.get(v))));
+        }
+      } else {
+        vs.slice(0, CAP).forEach((v) => list.append(item('', box(st.sel.has(v), false, (c) => { c ? st.sel.add(v) : st.sel.delete(v); render(); }), label(v), counts.get(v))));
+      }
+      hint.textContent = !vs.length ? (st.search.trim() ? 'No value matches. Apply will keep every value containing "' + st.search.trim() + '".' : 'No values.')
+        : (!isDate && vs.length > CAP ? 'Showing first ' + CAP + ' of ' + bdFmt.int(vs.length) + ' values. Type to narrow. ' : '') + bdFmt.int(vs.filter((v) => st.sel.has(v)).length) + ' of ' + bdFmt.int(values.length) + ' values ticked.';
+    }
+    sb.addEventListener('input', () => {
+      st.search = sb.value;
+      const t = st.search.trim();
+      if (t) st.sel = new Set(shown()); else if (!f) st.sel = new Set(values);
+      render();
+    });
+    const btns = mk('div', 'row');
+    const b = (txt, fn) => { const x = mk('button', 'bd-btn', txt); x.type = 'button'; x.addEventListener('click', fn); btns.append(x); };
+    b('Clear filter', () => { window.bdPop = null; setFlt(col, null); });
+    b('Cancel', () => closePop());
+    b('Apply', () => {
+      const t = st.search.trim();
+      const vs = shown();
+      window.bdPop = null;
+      if (t && !vs.length) return setFlt(col, { t });
+      const picked = values.filter((v) => st.sel.has(v));
+      if (picked.length === values.length && !f) return setFlt(col, null);
+      if (picked.length === values.length && !t && f && !f.t) return setFlt(col, null);
+      if (isDate) {
+        const byM = new Map();
+        values.forEach((v) => { const k = v === '' ? '#' : v.slice(3); if (!byM.has(k)) byM.set(k, []); byM.get(k).push(v); });
+        const m = [], v = [];
+        for (const [k, days] of byM) { const on = days.filter((x) => st.sel.has(x)); if (k !== '#' && on.length === days.length) m.push(k); else v.push(...on); }
+        return setFlt(col, { m, v });
+      }
+      setFlt(col, { v: picked });
+    });
+    el.append(btns);
+    render();
+    // place under its button
+    const par = el.offsetParent || el.parentElement;
+    if (par && st.anchor && st.anchor.isConnected) {
+      const pr = par.getBoundingClientRect(), ar = st.anchor.getBoundingClientRect();
+      const w = el.offsetWidth || 320;
+      el.style.top = Math.round(ar.bottom - pr.top + 4) + 'px';
+      el.style.left = Math.round(Math.max(0, Math.min(ar.left - pr.left, par.clientWidth - w))) + 'px';
+    }
+  });
+
+  // Search boxes stay outside drawings so typing is never overwritten.
+  const timers = {};
+  const later = (key, fn) => { clearTimeout(timers[key]); timers[key] = setTimeout(fn, 300); };
+  ['q', 'mq'].forEach((name) => document.querySelectorAll('#' + name).forEach((inp) => {
+    inp.value = dash.params()[name] || '';
+    inp.addEventListener('input', () => later(name, () => { const n = {}; n[name] = inp.value.trim(); dash.setParams(n); }));
+  }));
+  const clearInputs = (sel) => document.querySelectorAll(sel).forEach((i) => { i.value = ''; });
+  document.querySelectorAll('#hf-clear').forEach((b) => b.addEventListener('click', () => { window.bdPop = null; dash.setParams({ flt: '' }); }));
+  document.querySelectorAll('#f-reset').forEach((b) => b.addEventListener('click', () => {
+    clearInputs('#q'); clearInputs('#mq'); window.bdPop = null;
+    dash.setParams({ q: '', mq: '', flt: '' });
+  }));
+
+  // Ledger text file upload. The file is read only in this browser and is not saved to the dashboard.
+  window.MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  window.bdPeriod = () => {
+    const u = window.bdUpload;
+    if (!u) return 'Ledger';
+    const m = MONTHS[(parseInt(u.month, 10) || 0) - 1];
+    return m && u.year ? m + u.year : 'Uploaded';
+  };
+  dash.draw('srcinfo', (el) => {
+    const u = window.bdUpload;
+    if (u) {
+      const m = MONTHS[(parseInt(u.month, 10) || 0) - 1];
+      el.textContent = 'Showing uploaded file' + (u.files.length > 1 ? 's' : '') + ': ' + u.files.map((f) => f.name + ' (' + bdFmt.int(f.count) + ' consumers)').join(', ')
+        + (m ? ' · Month ' + m + '-' + u.year : '') + ' · Only in this browser, not saved.';
+      return;
+    }
+    el.textContent = 'No data loaded yet. Upload one or more LDG text files (for example 034LDG102026.txt) to start.';
+  });
+  const showUp = (id) => ['up-busy', 'up-fail'].forEach((s) => document.querySelectorAll('#' + s).forEach((e) => { e.hidden = s !== id; }));
+  const setUploaded = (on) => document.querySelectorAll('#up-reset').forEach((b) => { b.hidden = !on; });
+  async function loadFiles(files, inp) {
+    if (!files.length) return;
+    showUp('up-busy');
+    try {
+      const rows = [], info = [];
+      let month = '', year = '';
+      for (const file of files) {
+        const buf = await file.arrayBuffer();
+        let text = new TextDecoder('utf-8').decode(buf);
+        if (text.includes('\uFFFD')) text = new TextDecoder('windows-1252').decode(buf);
+        const parsed = bdParseLedger(text);
+        for (const r of parsed.rows) rows.push(r);
+        info.push({ name: file.name, count: parsed.rows.length });
+        if (!month) { month = parsed.month; year = parsed.year; }
+      }
+      window.bdUpload = { id: Date.now(), rows, files: info, month, year };
+      showUp(null); setUploaded(true);
+      window.bdPop = null;
+      dash.setParams({ src: 'upload-' + Date.now(), flt: '' });
+      dash.draw('srcinfo'); dash.draw('fbtn'); dash.draw('pop'); dash.draw('tcards'); dash.draw('kpi'); dash.draw('resmsg'); dash.draw('restable');
+    } catch (e) {
+      showUp('up-fail');
+    } finally { if (inp) inp.value = ''; }
+  }
+  document.querySelectorAll('#up-file').forEach((inp) => inp.addEventListener('change', () => loadFiles([...(inp.files || [])], inp)));
+  document.querySelectorAll('#upload').forEach((zone) => {
+    zone.addEventListener('dragover', (ev) => { ev.preventDefault(); zone.classList.add('drag'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
+    zone.addEventListener('drop', (ev) => { ev.preventDefault(); zone.classList.remove('drag'); loadFiles([...((ev.dataTransfer && ev.dataTransfer.files) || [])], null); });
+  });
+  document.querySelectorAll('#up-reset').forEach((b) => b.addEventListener('click', () => {
+    window.bdUpload = null; setUploaded(false); showUp(null);
+    window.bdPop = null;
+    dash.setParams({ src: 'none-' + Date.now(), flt: '' });
+    dash.draw('srcinfo'); dash.draw('fbtn'); dash.draw('pop'); dash.draw('tcards'); dash.draw('kpi'); dash.draw('resmsg'); dash.draw('restable');
+  }));
+
+  // Tariff cards: consumers per tariff under every filter except Tariff itself. Pressing a card filters the list by that tariff.
+  dash.draw('tcards', (el) => {
+    el.replaceChildren();
+    const rows = allRows();
+    if (!rows) { const m = document.createElement('p'); m.className = 'bd-msg'; m.textContent = 'Upload an LDG text file to see tariff wise consumers.'; el.append(m); return; }
+    const ok = bdMatch(dash.params(), 'tariff');
+    const cnt = new Map(); let tot = 0;
+    for (const d of rows) if (ok(d)) { cnt.set(d.tariff, (cnt.get(d.tariff) || 0) + 1); tot++; }
+    const f = bdFlt().tariff;
+    const picked = new Set(f && f.v ? f.v : []);
+    const active = !!(f && (f.v || f.t));
+    [...cnt.entries()].sort((a, b) => b[1] - a[1]).forEach(([t, n]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      const on = picked.has(t);
+      b.className = 'bd-tcard' + (on ? ' on' : active ? ' dim' : '');
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      const a = document.createElement('span'); a.className = 'tn'; a.textContent = t === 'BLANK' ? 'BLANK (no tariff)' : t;
+      const v = document.createElement('span'); v.className = 'tv'; v.textContent = bdFmt.int(n);
+      const p = document.createElement('span'); p.className = 'tp'; p.textContent = (tot ? (n / tot * 100).toFixed(1) : '0') + '% of consumers';
+      b.append(a, v, p);
+      b.addEventListener('click', () => {
+        const next = new Set(picked);
+        if (!f || f.t) next.clear();
+        if (on) next.delete(t); else next.add(t);
+        window.bdPop = null;
+        setFlt('tariff', next.size ? { v: [...next] } : null);
+        document.querySelectorAll('#results').forEach((r) => r.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+      });
+      el.append(b);
+    });
+  });
+
+  document.querySelectorAll('#kpi-consumers').forEach((c) => {
+    const go = () => { window.bdPop = null; setFlt('tariff', null); document.querySelectorAll('#results').forEach((r) => r.scrollIntoView({ behavior: 'smooth', block: 'start' })); };
+    c.addEventListener('click', go);
+    c.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } });
+  });
+
+  // KPI numbers
+  dash.draw('kpi', (el) => {
+    const c = bdCompute();
+    if (!c) { el.textContent = '—'; return; }
+    const f = el.dataset.k, v = c[f];
+    el.textContent = (f === 'consumers' || f === 'total') ? bdFmt.int(v) : bdFmt.lakh(v);
+  });
+
+  dash.draw('resmsg', (el) => {
+    const c = bdCompute();
+    if (!c) { el.textContent = 'Upload an LDG text file above to see the consumer list.'; return; }
+    const n = c.consumers;
+    el.textContent = !n ? 'No consumer matches this search and filters.'
+      : n > c.list.length ? 'Showing first ' + bdFmt.int(c.list.length) + ' of ' + bdFmt.int(n) + ' matching consumers. Use Export for the full list, or narrow the search.'
+      : 'Showing all ' + bdFmt.int(n) + ' matching consumers.';
+  });
+
+  dash.draw('restable', (tb) => {
+    const c = bdCompute();
+    tb.replaceChildren();
+    if (!c) return;
+    c.list.forEach((d) => {
+      const tr = document.createElement('tr');
+      bdCols.forEach(([c, , type]) => {
+        const td = document.createElement('td');
+        const isMoney = type === 'n' && c !== 'sr';
+        td.textContent = isMoney ? bdFmt.num(d[c]) : (d[c] ?? '');
+        if (isMoney) td.className = 'num';
+        tr.append(td);
+      });
+      tb.append(tr);
+    });
+  });
+</script>
+
+<script>
+  // ---------- Export (Excel .xlsx and PDF), built in the browser ----------
+  const enc = new TextEncoder();
+  const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  const crcUpdate = (crc, b) => { let c = crc ^ 0xffffffff; for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+
+  async function zipEntry(name, chunks) {
+    let crc = 0, size = 0;
+    const canDeflate = typeof CompressionStream !== 'undefined';
+    const out = [];
+    if (canDeflate) {
+      const cs = new CompressionStream('deflate-raw');
+      const w = cs.writable.getWriter();
+      const reading = (async () => { const r = cs.readable.getReader(); for (;;) { const { done, value } = await r.read(); if (done) break; out.push(value); } })();
+      for (const s of chunks) { const b = enc.encode(s); crc = crcUpdate(crc, b); size += b.length; await w.write(b); }
+      await w.close(); await reading;
+    } else {
+      for (const s of chunks) { const b = enc.encode(s); crc = crcUpdate(crc, b); size += b.length; out.push(b); }
+    }
+    const csize = out.reduce((a, b) => a + b.length, 0);
+    return { name: enc.encode(name), crc, size, csize, method: canDeflate ? 8 : 0, data: out };
+  }
+
+  function buildZip(entries) {
+    const parts = [], central = [];
+    let offset = 0;
+    const u16 = (v) => [v & 255, (v >>> 8) & 255], u32 = (v) => [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255];
+    for (const e of entries) {
+      const head = new Uint8Array([...u32(0x04034b50), ...u16(20), ...u16(0x0800), ...u16(e.method), ...u16(0), ...u16(0x21), ...u32(e.crc), ...u32(e.csize), ...u32(e.size), ...u16(e.name.length), ...u16(0)]);
+      parts.push(head, e.name, ...e.data);
+      central.push(new Uint8Array([...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0x0800), ...u16(e.method), ...u16(0), ...u16(0x21), ...u32(e.crc), ...u32(e.csize), ...u32(e.size), ...u16(e.name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset)]), e.name);
+      offset += head.length + e.name.length + e.csize;
+    }
+    const cdSize = central.reduce((a, b) => a + b.length, 0);
+    const end = new Uint8Array([...u32(0x06054b50), ...u16(0), ...u16(0), ...u16(entries.length), ...u16(entries.length), ...u32(cdSize), ...u32(offset), ...u16(0)]);
+    return new Blob([...parts, ...central, end]);
+  }
+
+  const xesc = (s) => String(s ?? '').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const colName = (i) => { let s = ''; i++; while (i) { const r = (i - 1) % 26; s = String.fromCharCode(65 + r) + s; i = Math.floor((i - 1) / 26); } return s; };
+
+  function* sheetChunks(rows) {
+    const last = colName(bdCols.length - 1);
+    const widths = bdCols.map((c) => c[4]);
+    yield '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+      + '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>'
+      + widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('') + '</cols><sheetData>';
+    yield '<row r="1">' + bdCols.map(([, short, , , , long], i) => [long || short, i]).map(([label, i]) => `<c r="${colName(i)}1" t="inlineStr" s="1"><is><t>${xesc(label)}</t></is></c>`).join('') + '</row>';
+    let buf = [];
+    for (let i = 0; i < rows.length; i++) {
+      const d = rows[i], r = i + 2;
+      const cells = bdCols.map(([c, , type], j) => {
+        const v = c === 'sr' ? i + 1 : d[c];
+        const ref = colName(j) + r;
+        if (type === 'n') return `<c r="${ref}"><v>${+v || 0}</v></c>`;
+        return v === '' || v == null ? '' : `<c r="${ref}" t="inlineStr"><is><t>${xesc(v)}</t></is></c>`;
+      }).join('');
+      buf.push(`<row r="${r}">${cells}</row>`);
+      if (buf.length >= 2000) { yield buf.join(''); buf = []; }
+    }
+    if (buf.length) yield buf.join('');
+    yield `</sheetData><autoFilter ref="A1:${last}${rows.length + 1}"/></worksheet>`;
+  }
+
+  async function makeXlsx(rows) {
+    const files = [
+      ['[Content_Types].xml', ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>']],
+      ['_rels/.rels', ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>']],
+      ['xl/workbook.xml', ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Consumer List" sheetId="1" r:id="rId1"/></sheets><definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">\'Consumer List\'!$A$1:$' + colName(bdCols.length - 1) + '$' + (rows.length + 1) + '</definedName></definedNames></workbook>']],
+      ['xl/_rels/workbook.xml.rels', ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>']],
+      ['xl/styles.xml', ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFDDEBF7"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>']],
+      ['xl/worksheets/sheet1.xml', sheetChunks(rows)]
+    ];
+    const entries = [];
+    for (const [name, chunks] of files) entries.push(await zipEntry(name, chunks));
+    return buildZip(entries);
+  }
+
+  function makePdf(rows, filterText) {
+    const W = 842, H = 595, M = 24, fs = 6.5, lh = 10, top = H - M;
+    const scale = (W - 2 * M) / bdCols.reduce((a, c) => a + c[3], 0);
+    const xs = []; let x = M; bdCols.forEach((c) => { xs.push(x); x += c[3] * scale; });
+    const asc = (s) => String(s ?? '').replace(/₹/g, 'Rs').replace(/[^\x20-\x7e]/g, '?').replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+    const fit = (s, w) => { const max = Math.max(2, Math.floor((w * scale - 3) / (fs * 0.5))); s = String(s ?? ''); return s.length > max ? s.slice(0, max - 1) + '.' : s; };
+    const perPage = Math.floor((top - 52 - M) / lh);
+    const pages = Math.max(1, Math.ceil(rows.length / perPage));
+    const streams = [];
+    for (let p = 0; p < pages; p++) {
+      const ops = [];
+      const text = (font, size, tx, ty, s) => ops.push(`BT /${font} ${size} Tf ${tx.toFixed(1)} ${ty.toFixed(1)} Td (${asc(s)}) Tj ET`);
+      text('F2', 11, M, top - 10, 'Bodeli O&M Division - Consumer List (' + bdPeriod() + ' Ledger)');
+      text('F1', 7, M, top - 22, fit(filterText, 600));
+      text('F1', 7, W - M - 90, top - 10, `Page ${p + 1} of ${pages}`);
+      let y = top - 40;
+      ops.push(`0.87 0.92 0.97 rg ${M} ${y - 3} ${W - 2 * M} ${lh + 2} re f 0 g`);
+      bdCols.forEach((c, i) => text('F2', fs, xs[i] + 1.5, y, fit(c[1], c[3])));
+      y -= lh + 2;
+      const slice = rows.slice(p * perPage, (p + 1) * perPage);
+      slice.forEach((d, k) => {
+        const sr = p * perPage + k + 1;
+        bdCols.forEach(([c, , type, w], i) => text('F1', fs, xs[i] + 1.5, y, fit(c === 'sr' ? sr : (type === 'n' ? (+d[c] || 0) : d[c]), w)));
+        ops.push(`0.85 G 0.3 w ${M} ${(y - 2.5).toFixed(1)} m ${W - M} ${(y - 2.5).toFixed(1)} l S 0 G`);
+        y -= lh;
+      });
+      streams.push(ops.join('\n'));
+    }
+    const objs = [];
+    objs[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+    objs[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
+    objs[4] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>';
+    const kids = [];
+    streams.forEach((s, i) => {
+      const po = 5 + i * 2, co = po + 1;
+      kids.push(po + ' 0 R');
+      objs[po] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${co} 0 R >>`;
+      objs[co] = `<< /Length ${s.length} >>\nstream\n${s}\nendstream`;
+    });
+    objs[2] = `<< /Type /Pages /Kids [${kids.join(' ')}] /Count ${kids.length} >>`;
+    let out = '%PDF-1.4\n';
+    const offs = [];
+    for (let i = 1; i < objs.length; i++) { offs[i] = out.length; out += `${i} 0 obj\n${objs[i]}\nendobj\n`; }
+    const xref = out.length;
+    out += `xref\n0 ${objs.length}\n0000000000 65535 f \n` + offs.slice(1).map((o) => String(o).padStart(10, '0') + ' 00000 n \n').join('');
+    out += `trailer\n<< /Size ${objs.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+    return out;
+  }
+
+  function filterSummary(p) {
+    const parts = [];
+    const names = Object.fromEntries(bdCols.map((c) => [c[0], c[1]]));
+    if (p.q) parts.push('Search: ' + p.q);
+    if (p.mq) parts.push('Meter search: ' + p.mq);
+    Object.entries(bdFlt(p)).forEach(([c, f]) => {
+      const n = names[c] || c;
+      if (f.t) return parts.push(n + ' contains ' + f.t);
+      const items = [...(f.m || []).map((m) => 'month ' + m), ...(f.v || []).map((v) => (v === '' ? '(Blank)' : v))];
+      parts.push(n + ': ' + items.slice(0, 4).join(', ') + (items.length > 4 ? ' +' + (items.length - 4) + ' more' : ''));
+    });
+    return parts.length ? 'Filters - ' + parts.join(' | ') : 'Filters - none (all consumers)';
+  }
+
+  const show = (id) => ['ex-busy', 'ex-done', 'ex-fail', 'ex-none', 'ex-pdfcap', 'ex-unavail'].forEach((s) => document.querySelectorAll('#' + s).forEach((e) => { e.hidden = s !== id; }));
+  const setBusy = (b) => document.querySelectorAll('#ex-xlsx, #ex-pdf').forEach((e) => { e.disabled = b; });
+
+  async function doExport(kind) {
+    const rows0 = allRows();
+    if (!rows0) { show('ex-fail'); return; }
+    const p = dash.params();
+    const rows = rows0.filter(bdMatch(p));
+    if (!rows.length) { show('ex-none'); return; }
+    setBusy(true); show('ex-busy');
+    try {
+      const downloads = await claude.use('downloads');
+      if (!downloads) { show('ex-unavail'); return; }
+      const stamp = 'Bodeli_Consumer_List_' + bdPeriod() + '_' + rows.length;
+      if (kind === 'xlsx') {
+        const blob = await makeXlsx(rows);
+        await downloads.save({ filename: stamp + '.xlsx', data: blob });
+        show('ex-done');
+      } else {
+        const capped = rows.slice(0, 3000);
+        const pdf = makePdf(capped, filterSummary(p));
+        await downloads.save({ filename: stamp + '.pdf', data: enc.encode(pdf) });
+        show(rows.length > 3000 ? 'ex-pdfcap' : 'ex-done');
+      }
+    } catch (e) {
+      show(e && (e.code === 'unavailable' || e.code === 'not_granted') ? 'ex-unavail' : 'ex-fail');
+    } finally { setBusy(false); }
+  }
+  document.querySelectorAll('#ex-xlsx').forEach((b) => b.addEventListener('click', () => doExport('xlsx')));
+  document.querySelectorAll('#ex-pdf').forEach((b) => b.addEventListener('click', () => doExport('pdf')));
+</script>
+
+</div>
+<script>window.__bdRunAll();</script>
+</body>
+</html>
