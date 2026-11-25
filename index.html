@@ -681,12 +681,22 @@
     qs('sb-adm').forEach((e) => { e.hidden = on || wantForm || !SB.url || window.bdDriveState === 'loading'; });
     qs('sb-who').forEach((e) => { e.hidden = !on; e.textContent = on ? 'Signed in as ' + sbSession.email : ''; });
     qs('sb-out').forEach((e) => { e.hidden = !on; });
-    qs('sb-admin').forEach((e) => { e.hidden = !on; });
+    qs('sb-admin').forEach((e) => { e.hidden = !on || !window.bdIsAdmin; });
     qs('up-local').forEach((e) => { e.hidden = !!SB.url && window.bdDriveState !== 'fail' && window.bdDriveState !== 'none'; });
   }
   const redrawAll = () => { dash.draw('srcinfo'); dash.draw('fbtn'); dash.draw('pop'); dash.draw('tcards'); dash.draw('kpi'); dash.draw('resmsg'); dash.draw('restable'); };
+  // Asks Supabase whether the signed-in login is the Division admin (the same rule that guards uploads).
+  async function sbCheckAdmin() {
+    window.bdIsAdmin = false;
+    if (!sbSession) return;
+    try {
+      const r = await fetch(SB.url + '/rest/v1/rpc/bd_is_admin', { method: 'POST', headers: await sbHeaders({ 'Content-Type': 'application/json' }), body: '{}' });
+      window.bdIsAdmin = r.ok && (await r.json()) === true;
+    } catch (e) { window.bdIsAdmin = false; }
+  }
   async function loadDrive() {
     if (!SB.url || !SB.key) { sbShowAccount(); return; }
+    await sbCheckAdmin();
     window.bdDriveState = 'loading';
     showOnly(['dr-busy', 'dr-fail'], 'dr-busy'); sbShowAccount(); dash.draw('srcinfo');
     try {
