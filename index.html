@@ -694,39 +694,56 @@
       window.bdIsAdmin = r.ok && (await r.json()) === true;
     } catch (e) { window.bdIsAdmin = false; }
   }
+  // Only the newest load may change the page: an older load still running (for example one started before
+  // sign in or before a new publish, whose old parts are then deleted) is ignored instead of showing an error.
+  let bdLoadGen = 0;
+  async function readMaster() {
+    const r = await sbGet('master/index.json');
+    if (!r.ok) return null;
+    const ix = await r.json();
+    const rows = [];
+    for (const part of ix.parts || []) {
+      const pr = await sbGet(part.path);
+      if (!pr.ok) throw new Error('part ' + pr.status);
+      for (const row of bdParseLedger(await gunzipText(pr)).rows) rows.push(row);
+    }
+    return { ix, rows };
+  }
   async function loadDrive() {
     if (!SB.url || !SB.key) { sbShowAccount(); return; }
+    const gen = ++bdLoadGen;
     await sbCheckAdmin();
+    if (gen !== bdLoadGen) return;
     window.bdDriveState = 'loading';
     showOnly(['dr-busy', 'dr-fail'], 'dr-busy'); sbShowAccount(); dash.draw('srcinfo');
-    try {
-      const r = await sbGet('master/index.json');
-      if (!r.ok) {
-        window.bdDriveState = sbSession ? 'none' : 'login';
-        showOnly(['dr-busy', 'dr-fail'], null); sbShowAccount(); dash.draw('srcinfo'); return;
-      }
-      const ix = await r.json();
-      const rows = [];
-      for (const part of ix.parts || []) {
-        const pr = await sbGet(part.path);
-        if (!pr.ok) throw new Error('part ' + pr.status);
-        for (const row of bdParseLedger(await gunzipText(pr)).rows) rows.push(row);
-      }
-      const d = ix.at ? new Date(ix.at) : null;
-      const updated = d && !isNaN(d) ? d.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(/\//g, '-') : '';
-      window.bdDriveState = rows.length ? 'ok' : 'none';
-      showOnly(['dr-busy', 'dr-fail'], null); sbShowAccount();
-      if (window.bdUpload && !window.bdUpload.drive) { dash.draw('srcinfo'); return; }
-      if (rows.length) {
-        window.bdUpload = { id: 'master-' + (ix.at || Date.now()), rows, files: ix.files || [], month: ix.month || '', year: ix.year || '', drive: true, updated };
-        window.bdPop = null;
-        dash.setParams({ src: 'master-' + Date.now(), flt: '' });
-      }
-      redrawAll();
-    } catch (e) {
-      window.bdDriveState = 'fail';
-      showOnly(['dr-busy', 'dr-fail'], 'dr-fail'); sbShowAccount(); dash.draw('srcinfo');
+    let got = null, failed = false;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try { got = await readMaster(); failed = false; break; }
+      catch (e) { failed = true; await new Promise((res) => setTimeout(res, 1500)); }
+      if (gen !== bdLoadGen) return;
     }
+    if (gen !== bdLoadGen) return;
+    if (failed && window.bdUpload && window.bdUpload.drive) { window.bdDriveState = 'ok'; showOnly(['dr-busy', 'dr-fail'], null); sbShowAccount(); return; } // keep the data already shown
+    if (failed) {
+      window.bdDriveState = 'fail';
+      showOnly(['dr-busy', 'dr-fail'], 'dr-fail'); sbShowAccount(); dash.draw('srcinfo'); return;
+    }
+    if (!got) {
+      window.bdDriveState = sbSession ? 'none' : 'login';
+      showOnly(['dr-busy', 'dr-fail'], null); sbShowAccount(); dash.draw('srcinfo'); return;
+    }
+    const { ix, rows } = got;
+    const d = ix.at ? new Date(ix.at) : null;
+    const updated = d && !isNaN(d) ? d.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(/\//g, '-') : '';
+    window.bdDriveState = rows.length ? 'ok' : 'none';
+    showOnly(['dr-busy', 'dr-fail'], null); sbShowAccount();
+    if (window.bdUpload && !window.bdUpload.drive) { dash.draw('srcinfo'); return; }
+    if (rows.length) {
+      window.bdUpload = { id: 'master-' + (ix.at || Date.now()), rows, files: ix.files || [], month: ix.month || '', year: ix.year || '', drive: true, updated };
+      window.bdPop = null;
+      dash.setParams({ src: 'master-' + Date.now(), flt: '' });
+    }
+    redrawAll();
   }
   qs('sb-login').forEach((f) => f.addEventListener('submit', async (ev) => {
     ev.preventDefault();
